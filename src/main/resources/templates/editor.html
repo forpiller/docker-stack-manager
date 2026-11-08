@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="it" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="'Editor — ' + ${stack.displayName}">Editor</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/codemirror.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/theme/dracula.min.css" rel="stylesheet">
+    <style>
+        body { background: #1e2030; color: #e0e0e0; }
+        .navbar { background: #1e3a5f !important; border-bottom: 1px solid #2d5a8e; }
+        .card { background: #252939; border: 1px solid #2d3a52; }
+        .card-header { background: #2d3a52; color: #e0e0e0; }
+        .card-body { color: #e0e0e0; }
+        .text-muted { color: #8899aa !important; }
+        .image-row { background: #1a2130; border: 1px solid #2d3a52; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+        select.image-tag-select {
+            background-color: #2d3a52;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23e0e0e0' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+            color: #e0e0e0;
+            border: 1px solid #e94560;
+        }
+        /* CodeMirror overrides */
+        .CodeMirror {
+            background: #1e2030 !important;
+            border: 1px solid #2d3a52;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+            font-size: 0.84rem;
+            height: 68vh;
+            line-height: 1.55;
+        }
+        .CodeMirror-scroll { overflow-x: auto !important; overflow-y: auto !important; }
+        .CodeMirror pre.CodeMirror-line { white-space: pre !important; }
+        .CodeMirror-hscrollbar { display: block !important; }
+        .cm-search-highlight { background: rgba(255,200,0,0.25); border-radius: 2px; }
+        .cm-search-current   { background: rgba(255,150,0,0.65); border-radius: 2px; outline: 1px solid #ffaa00; }
+        #editor-search-bar { background: #1a2130; border: 1px solid #3a4a6a; border-radius: 6px; padding: 6px 10px; }
+        #editor-search-input { background: #252939 !important; color: #e0e0e0 !important; border: 1px solid #3a4a6a !important; font-size: 0.82rem; }
+        #editor-search-input:focus { border-color: #6a9fd8 !important; box-shadow: none !important; }
+        #editor-search-input.no-match { border-color: #e94560 !important; color: #e94560 !important; }
+        .search-nav-btn { background: #2d3a52; border: 1px solid #3a4a6a; color: #e0e0e0; border-radius: 4px; padding: 2px 8px; font-size: 0.8rem; cursor: pointer; }
+        .search-nav-btn:hover { background: #3a4a62; }
+        #editor-search-count { color: #8899aa; font-size: 0.78rem; min-width: 40px; text-align: center; }
+        #save-toast { position:fixed; top:20px; right:24px; z-index:9999; padding:8px 16px; border-radius:8px; font-size:0.82rem; font-weight:600; color:#fff; display:none; box-shadow:0 4px 16px rgba(0,0,0,0.5); transition:opacity 0.3s; pointer-events:none; }
+        .port-row { background: #1a2130; border: 1px solid #2d3a52; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+        .port-host-input { background-color: #2d3a52 !important; color: #e0e0e0 !important; border: 1px solid #e9913a !important; max-width: 80px; font-family: monospace; }
+        .port-host-input:focus { background-color: #3a4a62 !important; border-color: #f0a050 !important; box-shadow: none !important; }
+        .port-separator { color: #8899aa; font-size: 0.9rem; }
+        .port-container-val { color: #00ff88; font-family: monospace; font-size: 0.85rem; min-width: 50px; }
+        .ports-section-header { color: #8899aa; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+        .quick-num-input  { background-color: #2d3a52 !important; color: #e0e0e0 !important; border: 1px solid #4a90d9 !important; max-width: 72px; font-family: monospace; }
+        .quick-num-input:focus  { background-color: #3a4a62 !important; border-color: #6aafff !important; box-shadow: none !important; }
+        .quick-text-input { background-color: #2d3a52 !important; color: #e0e0e0 !important; border: 1px solid #0f9b58 !important; font-family: monospace; font-size: 0.78rem; }
+        .quick-text-input:focus { background-color: #3a4a62 !important; border-color: #0bcc72 !important; box-shadow: none !important; }
+        .quick-mem-input  { background-color: #2d3a52 !important; color: #e0e0e0 !important; border: 1px solid #9b6b0f !important; max-width: 70px; font-family: monospace; }
+        .quick-mem-input:focus  { background-color: #3a4a62 !important; border-color: #d4920f !important; box-shadow: none !important; }
+        .panel-refresh-btn { background: none; border: 1px solid #3a4a6a; color: #8899aa; border-radius: 4px; padding: 1px 6px; font-size: 0.7rem; cursor: pointer; }
+        .panel-refresh-btn:hover { border-color: #6a8aaa; color: #e0e0e0; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark mb-4">
+    <div class="container-fluid">
+        <a href="/" class="navbar-brand"><i class="fas fa-arrow-left"></i> Docker Stack Manager</a>
+        <span class="text-light">
+            <span th:text="${stack.displayName}"></span>
+            <span class="badge bg-danger ms-2" th:text="${stack.stackName}"></span>
+        </span>
+    </div>
+</nav>
+
+<div id="save-toast"></div>
+
+<div class="container-fluid px-4">
+
+    <!-- Flash messages -->
+    <div th:if="${message}" class="alert alert-success alert-dismissible fade show">
+        <span th:text="${message}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    <div th:if="${error}" class="alert alert-danger alert-dismissible fade show">
+        <span th:text="${error}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
+    <div class="row g-3">
+        <!-- Colonna sinistra: dropdown immagini -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-layer-group"></i> Versioni immagini locali
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">Seleziona un tag per aggiornare il file.</p>
+
+                    <div th:if="${#lists.isEmpty(imageTags)}" class="text-muted small">
+                        Nessuna immagine trovata nel file o Docker non raggiungibile.
+                    </div>
+
+                    <div th:each="entry : ${imageTags}" class="image-row">
+                        <!-- Nome container in evidenza -->
+                        <div class="fw-bold mb-0" style="color:#e0e0e0; font-size:0.88rem;" th:text="${entry.containerName}"></div>
+                        <!-- Path completo in piccolo -->
+                        <div style="color:#5a6e88; font-size:0.65rem; word-break:break-all; margin-bottom:6px;" th:text="${entry.fullKey}"></div>
+                        <div th:if="${#lists.isEmpty(entry.tags)}" class="text-muted small">
+                            Nessun tag locale trovato
+                        </div>
+                        <div th:unless="${#lists.isEmpty(entry.tags)}" class="d-flex gap-2 align-items-center">
+                            <select class="form-select form-select-sm image-tag-select flex-grow-1"
+                                    th:data-image="${entry.fullKey}">
+                                <option th:each="tag : ${entry.tags}"
+                                        th:value="${tag}"
+                                        th:text="${tag == entry.currentTag ? '▶ ' + tag : tag}"
+                                        th:selected="${tag == entry.currentTag}"></option>
+                            </select>
+                            <button type="button" class="btn btn-outline-warning btn-sm apply-tag-btn"
+                                    th:data-image="${entry.fullKey}">
+                                Applica
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card porte -->
+            <div class="card mt-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-plug"></i> Porte</span>
+                    <button class="panel-refresh-btn" onclick="refreshPortsPanel()"><i class="fas fa-sync-alt"></i></button>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-2">Porta host → container per servizio.</p>
+                    <div id="ports-panel-content"><span class="text-muted small">In attesa dell'editor...</span></div>
+                </div>
+            </div>
+
+            <!-- Card repliche -->
+            <div class="card mt-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-clone"></i> Repliche</span>
+                    <button class="panel-refresh-btn" onclick="refreshReplicasPanel()"><i class="fas fa-sync-alt"></i></button>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-2">Numero di istanze per servizio.</p>
+                    <div id="replicas-panel-content"><span class="text-muted small">In attesa dell'editor...</span></div>
+                </div>
+            </div>
+
+            <!-- Card profili Spring -->
+            <div class="card mt-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-tag"></i> Profili Spring</span>
+                    <button class="panel-refresh-btn" onclick="refreshProfilesPanel()"><i class="fas fa-sync-alt"></i></button>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-2">SPRING_PROFILES_ACTIVE per servizio.</p>
+                    <div id="profiles-panel-content"><span class="text-muted small">In attesa dell'editor...</span></div>
+                </div>
+            </div>
+
+            <!-- Card memoria JVM -->
+            <div class="card mt-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-memory"></i> Memoria JVM</span>
+                    <button class="panel-refresh-btn" onclick="refreshJvmPanel()"><i class="fas fa-sync-alt"></i></button>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-2">-Xms / -Xmx per servizio.</p>
+                    <div id="jvm-panel-content"><span class="text-muted small">In attesa dell'editor...</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Colonna destra: editor -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-start">
+                    <div>
+                        <div style="color:#00ff88; font-weight:600; font-size:1rem;">
+                            <i class="fas fa-file-code"></i> <span th:text="${stack.displayName}"></span>
+                        </div>
+                        <div style="color:#6a7f99; font-size:0.7rem; margin-top:2px; word-break:break-all;" th:text="${stack.filePath}"></div>
+                    </div>
+                    <button class="panel-refresh-btn mt-1" onclick="toggleSearch()" title="Cerca (Ctrl+F)">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+                <div class="card-body">
+                    <!-- Search bar -->
+                    <div id="editor-search-bar" class="d-flex align-items-center gap-2 mb-2" style="display:none!important;">
+                        <input type="text" id="editor-search-input" placeholder="Cerca nel file…"
+                            class="form-control form-control-sm flex-grow-1" autocomplete="off">
+                        <span id="editor-search-count"></span>
+                        <button class="search-nav-btn" onclick="searchNav(-1)" title="Precedente (Shift+Enter)">↑</button>
+                        <button class="search-nav-btn" onclick="searchNav(1)" title="Successivo (Enter)">↓</button>
+                        <button class="search-nav-btn" onclick="closeSearch()" title="Chiudi (Esc)">✕</button>
+                    </div>
+                    <div id="editor-container" class="mb-3"></div>
+                    <form th:action="'/stacks/' + ${stack.id} + '/save'" method="post" id="form-save">
+                        <textarea id="file-content" name="content" th:text="${fileContent}" style="display:none;"></textarea>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-outline-light" onclick="syncEditor()">
+                                <i class="fas fa-save"></i> Salva
+                            </button>
+                        </div>
+                    </form>
+                    <form th:action="'/stacks/' + ${stack.id} + '/save-and-deploy'" method="post" id="form-save-deploy" class="mt-2">
+                        <input type="hidden" name="content" id="content-deploy">
+                        <button type="submit" class="btn btn-deploy btn-sm text-white"
+                                style="background:#0f9b58; border-color:#0f9b58;"
+                                onclick="syncEditor(); document.getElementById('content-deploy').value = document.getElementById('file-content').value">
+                            <i class="fas fa-play"></i> Salva e Rideploya
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/yaml/yaml.min.js"></script>
+<script>
+    let editor;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const textarea = document.getElementById('file-content');
+        editor = CodeMirror(document.getElementById('editor-container'), {
+            value: textarea.value,
+            mode: 'yaml',
+            theme: 'dracula',
+            lineNumbers: true,
+            lineWrapping: false,
+            indentWithTabs: false,
+            tabSize: 2,
+            indentUnit: 2,
+            autofocus: true,
+            scrollbarStyle: 'native'
+        });
+        editor.setSize('100%', '68vh');
+        editor.addKeyMap({ 'Ctrl-F': function() { openSearch(); return false; }, 'Cmd-F': function() { openSearch(); return false; } });
+        refreshAllPanels();
+
+        document.querySelectorAll('.apply-tag-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const imageName = this.dataset.image;
+                const select = document.querySelector(`select[data-image="${imageName}"]`);
+                if (!select) return;
+                const selectedTag = select.value;
+                const lines = editor.getValue().split('\n');
+                const imageBase = imageName.includes(':') ? imageName.substring(0, imageName.lastIndexOf(':')) : imageName;
+
+                const updated = lines.map(line => {
+                    const trimmed = line.trimStart();
+                    if (trimmed.startsWith('image:') && line.includes(imageBase)) {
+                        return line.replace(/(image:\s*)(.+)/, (match, prefix, img) => {
+                            const base = img.trim().includes(':') ? img.trim().substring(0, img.trim().lastIndexOf(':')) : img.trim();
+                            return prefix + base + ':' + selectedTag;
+                        });
+                    }
+                    return line;
+                });
+
+                editor.setValue(updated.join('\n'));
+            });
+        });
+    });
+
+    function syncEditor() {
+        if (editor) {
+            document.getElementById('file-content').value = editor.getValue();
+        }
+    }
+
+    function autoSave() {
+        syncEditor();
+        const form = document.getElementById('form-save');
+        const content = document.getElementById('file-content').value;
+        fetch(form.action, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'content=' + encodeURIComponent(content)
+        })
+        .then(() => showSaveToast(true))
+        .catch(() => showSaveToast(false));
+    }
+
+    function showSaveToast(success) {
+        const t = document.getElementById('save-toast');
+        t.textContent = success ? '✓ Salvato' : '✗ Errore salvataggio';
+        t.style.background = success ? '#0f9b58' : '#e94560';
+        t.style.display = 'block';
+        clearTimeout(t._tid);
+        t._tid = setTimeout(() => { t.style.display = 'none'; }, 2000);
+    }
+
+    // ── Ports panel ─────────────────────────────────────────────────
+    function parsePorts(yamlText) {
+        const lines = yamlText.split('\n');
+        const result = [];
+        let inServices = false;
+        let currentService = null;
+        let inPorts = false;
+        let portsIndent = -1;
+
+        for (let i = 0; i < lines.length; i++) {
+            const raw = lines[i];
+            if (!raw.trim() || raw.trim().startsWith('#')) continue;
+            const indent = raw.search(/\S/);
+            const trimmed = raw.trim();
+
+            if (trimmed === 'services:' && indent === 0) { inServices = true; continue; }
+            if (!inServices) continue;
+            if (indent === 0 && trimmed !== 'services:') { inServices = false; continue; }
+
+            // service name at indent 2
+            if (indent === 2 && /^[a-z0-9_][a-z0-9_-]*:\s*$/.test(trimmed)) {
+                currentService = trimmed.slice(0, -1);
+                inPorts = false;
+                portsIndent = -1;
+                continue;
+            }
+
+            if (currentService && trimmed === 'ports:') {
+                inPorts = true;
+                portsIndent = indent;
+                continue;
+            }
+
+            // exiting ports block
+            if (inPorts && indent <= portsIndent && !trimmed.startsWith('-')) {
+                inPorts = false;
+            }
+
+            if (inPorts && trimmed.startsWith('-')) {
+                let portStr = trimmed.replace(/^-\s*/, '').replace(/^["']|["']$/g, '');
+                if (portStr.includes(':')) {
+                    const colonIdx = portStr.indexOf(':');
+                    const hostPort = portStr.substring(0, colonIdx).trim();
+                    const containerPort = portStr.substring(colonIdx + 1).trim();
+                    if (/^\d+$/.test(hostPort) && /^\d+$/.test(containerPort)) {
+                        result.push({ service: currentService, hostPort, containerPort, lineIndex: i });
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    function renderPortsPanel(ports) {
+        const container = document.getElementById('ports-panel-content');
+        if (!ports || ports.length === 0) {
+            container.innerHTML = '<p class="text-muted small mb-0">Nessuna porta trovata nel file.</p>';
+            return;
+        }
+
+        const byService = {};
+        ports.forEach(p => { if (!byService[p.service]) byService[p.service] = []; byService[p.service].push(p); });
+
+        let html = '';
+        Object.entries(byService).forEach(([svc, portList]) => {
+            html += `<div class="port-row">
+                <div class="ports-section-header">${svc}</div>`;
+            portList.forEach(p => {
+                html += `<div class="d-flex align-items-center gap-2 mb-1">
+                    <input type="number" class="form-control form-control-sm port-host-input"
+                        value="${p.hostPort}" data-line="${p.lineIndex}" data-container="${p.containerPort}">
+                    <span class="port-separator">→</span>
+                    <span class="port-container-val">${p.containerPort}</span>
+                    <button class="btn btn-outline-warning btn-sm apply-port-btn" data-line="${p.lineIndex}"
+                        style="font-size:0.72rem; padding:2px 8px;">Applica</button>
+                </div>`;
+            });
+            html += '</div>';
+        });
+
+        container.innerHTML = html;
+
+        container.querySelectorAll('.apply-port-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const lineIdx = parseInt(this.dataset.line);
+                const inputEl = container.querySelector(`.port-host-input[data-line="${lineIdx}"]`);
+                const newHost = inputEl.value.trim();
+                if (!newHost || !/^\d+$/.test(newHost)) return;
+
+                const lines = editor.getValue().split('\n');
+                lines[lineIdx] = lines[lineIdx].replace(
+                    /(-\s*["']?)(\d+)(:\d+["']?)/,
+                    (m, pre, _host, suf) => pre + newHost + suf
+                );
+                editor.setValue(lines.join('\n'));
+                refreshPortsPanel();
+                autoSave();
+            });
+        });
+    }
+
+    function refreshPortsPanel() {
+        if (!editor) return;
+        renderPortsPanel(parsePorts(editor.getValue()));
+    }
+
+    // ── Replicas panel ───────────────────────────────────────────────
+    function parseReplicas(yamlText) {
+        const lines = yamlText.split('\n');
+        const services = [];
+        const replicaInfo = {}, deployInfo = {};
+        let inServices = false, currentService = null;
+        let inDeploy = false, deployIndent = -1;
+
+        for (let i = 0; i < lines.length; i++) {
+            const raw = lines[i];
+            if (!raw.trim() || raw.trim().startsWith('#')) continue;
+            const indent = raw.search(/\S/);
+            const trimmed = raw.trim();
+
+            if (trimmed === 'services:' && indent === 0) { inServices = true; continue; }
+            if (!inServices) continue;
+            if (indent === 0 && trimmed !== 'services:') { inServices = false; continue; }
+            if (indent === 2 && /^[a-z0-9_][a-z0-9_-]*:\s*$/.test(trimmed)) {
+                currentService = trimmed.slice(0, -1);
+                services.push({ name: currentService, lineIndex: i });
+                inDeploy = false; deployIndent = -1; continue;
+            }
+            if (currentService && trimmed === 'deploy:') {
+                inDeploy = true; deployIndent = indent;
+                if (deployInfo[currentService] === undefined) deployInfo[currentService] = i;
+                continue;
+            }
+            if (inDeploy && indent <= deployIndent && !trimmed.startsWith('replicas:')) inDeploy = false;
+            if (inDeploy) {
+                const m = trimmed.match(/^replicas:\s*(\d+)$/);
+                if (m) replicaInfo[currentService] = { replicas: parseInt(m[1]), lineIndex: i };
+            }
+        }
+
+        return services.map(svc => ({
+            service: svc.name,
+            replicas: replicaInfo[svc.name] ? replicaInfo[svc.name].replicas : 1,
+            lineIndex: replicaInfo[svc.name] ? replicaInfo[svc.name].lineIndex : -1,
+            deployLineIndex: deployInfo[svc.name] !== undefined ? deployInfo[svc.name] : -1,
+            serviceLineIndex: svc.lineIndex,
+            explicit: !!replicaInfo[svc.name]
+        }));
+    }
+
+    function renderReplicasPanel(items) {
+        const container = document.getElementById('replicas-panel-content');
+        if (!items || items.length === 0) {
+            container.innerHTML = '<p class="text-muted small mb-0">Nessun servizio trovato.</p>'; return;
+        }
+        let html = '';
+        items.forEach(item => {
+            const hint = !item.explicit
+                ? '<span style="color:#5a7a9a; font-size:0.68rem; margin-left:2px;" title="Valore di default — verrà aggiunto al file">auto</span>'
+                : '';
+            html += `<div class="port-row">
+                <div class="ports-section-header d-flex align-items-center gap-1">${item.service} ${hint}</div>
+                <div class="d-flex align-items-center gap-2">
+                    <input type="number" min="0" class="form-control form-control-sm quick-num-input replica-input"
+                        value="${item.replicas}" data-idx="${item.serviceLineIndex}"
+                        data-line="${item.lineIndex}" data-deploy="${item.deployLineIndex}" data-explicit="${item.explicit}">
+                    <span style="color:#8899aa; font-size:0.78rem;">istanze</span>
+                    <button class="btn btn-sm apply-replica-btn"
+                        data-idx="${item.serviceLineIndex}" data-line="${item.lineIndex}"
+                        data-deploy="${item.deployLineIndex}" data-explicit="${item.explicit}"
+                        style="font-size:0.72rem; padding:2px 8px; background:#1e3a5f; border:1px solid #4a90d9; color:#7abfff;">Applica</button>
+                </div>
+            </div>`;
+        });
+        container.innerHTML = html;
+
+        container.querySelectorAll('.apply-replica-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const svcLineIdx  = parseInt(this.dataset.idx);
+                const lineIdx     = parseInt(this.dataset.line);
+                const deployIdx   = parseInt(this.dataset.deploy);
+                const isExplicit  = this.dataset.explicit === 'true';
+                const input = container.querySelector(`.replica-input[data-idx="${svcLineIdx}"]`);
+                const val = input.value.trim();
+                if (!val || !/^\d+$/.test(val)) return;
+
+                const lines = editor.getValue().split('\n');
+
+                if (isExplicit && lineIdx >= 0) {
+                    // replace existing replicas: line
+                    lines[lineIdx] = lines[lineIdx].replace(/(\s*replicas:\s*)\d+/, '$1' + val);
+                } else if (deployIdx >= 0) {
+                    // insert replicas: after deploy:
+                    const deployIndentCount = lines[deployIdx].search(/\S/);
+                    lines.splice(deployIdx + 1, 0, ' '.repeat(deployIndentCount + 2) + 'replicas: ' + val);
+                } else {
+                    // no deploy block — insert deploy: + replicas: after service name line
+                    const svcIndentCount = lines[svcLineIdx].search(/\S/);
+                    const ins = [
+                        ' '.repeat(svcIndentCount + 2) + 'deploy:',
+                        ' '.repeat(svcIndentCount + 4) + 'replicas: ' + val
+                    ];
+                    lines.splice(svcLineIdx + 1, 0, ...ins);
+                }
+                editor.setValue(lines.join('\n'));
+                refreshReplicasPanel();
+                autoSave();
+            });
+        });
+    }
+
+    function refreshReplicasPanel() {
+        if (!editor) return;
+        renderReplicasPanel(parseReplicas(editor.getValue()));
+    }
+
+    // ── Spring Profiles panel ────────────────────────────────────────
+    function parseSpringProfiles(yamlText) {
+        return parseServicesContextReturn(yamlText, 'environment', (svc, trimmed, i) => {
+            if (!trimmed.startsWith('-')) return null;
+            const envStr = trimmed.replace(/^-\s*/, '').replace(/^["']|["']$/g, '');
+            const m = envStr.match(/^SPRING_PROFILES_ACTIVE=(.+)$/);
+            return m ? { service: svc, profiles: m[1], lineIndex: i } : null;
+        });
+    }
+
+    function parseJvmMemory(yamlText) {
+        return parseServicesContextReturn(yamlText, 'environment', (svc, trimmed, i) => {
+            if (!trimmed.startsWith('-')) return null;
+            const envStr = trimmed.replace(/^-\s*/, '').replace(/^["']|["']$/g, '');
+            if (!envStr.includes('-Xm')) return null;
+            const xmsM = envStr.match(/-Xms(\d+[mMgG])/);
+            const xmxM = envStr.match(/-Xmx(\d+[mMgG])/);
+            if (!xmsM && !xmxM) return null;
+            return { service: svc, xms: xmsM ? xmsM[1] : '', xmx: xmxM ? xmxM[1] : '', lineIndex: i };
+        });
+    }
+
+    function parseServicesContextReturn(yamlText, targetKey, mapper) {
+        const lines = yamlText.split('\n');
+        const result = [];
+        let inServices = false, currentService = null;
+        let inTarget = false, targetIndent = -1;
+
+        for (let i = 0; i < lines.length; i++) {
+            const raw = lines[i];
+            if (!raw.trim() || raw.trim().startsWith('#')) continue;
+            const indent = raw.search(/\S/);
+            const trimmed = raw.trim();
+
+            if (trimmed === 'services:' && indent === 0) { inServices = true; continue; }
+            if (!inServices) continue;
+            if (indent === 0 && trimmed !== 'services:') { inServices = false; continue; }
+            if (indent === 2 && /^[a-z0-9_][a-z0-9_-]*:\s*$/.test(trimmed)) {
+                currentService = trimmed.slice(0, -1); inTarget = false; targetIndent = -1; continue;
+            }
+            if (currentService && trimmed === targetKey + ':') { inTarget = true; targetIndent = indent; continue; }
+            if (inTarget && indent <= targetIndent && !trimmed.startsWith('-')) inTarget = false;
+            if (inTarget) {
+                const mapped = mapper(currentService, trimmed, i);
+                if (mapped) result.push(mapped);
+            }
+        }
+        return result;
+    }
+
+    function renderProfilesPanel(items) {
+        const container = document.getElementById('profiles-panel-content');
+        if (!items || items.length === 0) {
+            container.innerHTML = '<p class="text-muted small mb-0">Nessun SPRING_PROFILES_ACTIVE trovato.</p>'; return;
+        }
+        const allSameProfiles = items.length > 1 && items.every(i => i.profiles === items[0].profiles);
+        let html = '';
+        items.forEach(item => {
+            html += `<div class="port-row">
+                <div class="ports-section-header">${item.service}</div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <input type="text" class="form-control form-control-sm quick-text-input profile-input flex-grow-1"
+                        value="${item.profiles}" data-line="${item.lineIndex}">
+                    <button class="btn btn-sm apply-profile-btn" data-line="${item.lineIndex}"
+                        style="font-size:0.72rem; padding:2px 8px; background:#0d2a1e; border:1px solid #0f9b58; color:#0bcc72; white-space:nowrap;">Applica</button>
+                </div>
+            </div>`;
+        });
+        if (items.length > 1) {
+            html += `<div class="mt-2">
+                <button class="btn btn-sm w-100 apply-profile-all-btn"
+                    style="font-size:0.72rem; background:#0d2a1e; border:1px solid #0f9b58; color:#0bcc72;">
+                    <i class="fas fa-layer-group"></i> Applica a tutti i servizi
+                </button>
+            </div>`;
+        }
+        container.innerHTML = html;
+
+        container.querySelectorAll('.apply-profile-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const lineIdx = parseInt(this.dataset.line);
+                const val = container.querySelector(`.profile-input[data-line="${lineIdx}"]`).value.trim();
+                if (!val) return;
+                applyEnvValue(lineIdx, 'SPRING_PROFILES_ACTIVE', val);
+                refreshProfilesPanel();
+                autoSave();
+            });
+        });
+
+        const applyAllBtn = container.querySelector('.apply-profile-all-btn');
+        if (applyAllBtn) {
+            applyAllBtn.addEventListener('click', function() {
+                const firstVal = container.querySelector('.profile-input').value.trim();
+                if (!firstVal) return;
+                const lines = editor.getValue().split('\n');
+                items.forEach(item => {
+                    lines[item.lineIndex] = lines[item.lineIndex].replace(
+                        /(SPRING_PROFILES_ACTIVE=).+?(?=["']|$)/, '$1' + firstVal
+                    );
+                });
+                editor.setValue(lines.join('\n'));
+                refreshProfilesPanel();
+                autoSave();
+            });
+        }
+    }
+
+    function applyEnvValue(lineIdx, key, newVal) {
+        const lines = editor.getValue().split('\n');
+        const re = new RegExp('(' + key + '=).+?(?=["\']|$)');
+        lines[lineIdx] = lines[lineIdx].replace(re, '$1' + newVal);
+        editor.setValue(lines.join('\n'));
+    }
+
+    function refreshProfilesPanel() {
+        if (!editor) return;
+        renderProfilesPanel(parseSpringProfiles(editor.getValue()));
+    }
+
+    // ── JVM Memory panel ─────────────────────────────────────────────
+    function renderJvmPanel(items) {
+        const container = document.getElementById('jvm-panel-content');
+        if (!items || items.length === 0) {
+            container.innerHTML = '<p class="text-muted small mb-0">Nessun -Xms/-Xmx trovato in JAVA_OPTS.</p>'; return;
+        }
+        let html = '';
+        items.forEach(item => {
+            html += `<div class="port-row">
+                <div class="ports-section-header">${item.service}</div>
+                <div class="d-flex align-items-center gap-1 flex-wrap">
+                    <span style="color:#8899aa; font-size:0.72rem;">Xms</span>
+                    <input type="text" class="form-control form-control-sm quick-mem-input xms-input"
+                        value="${item.xms}" data-line="${item.lineIndex}" placeholder="256m">
+                    <span style="color:#8899aa; font-size:0.72rem;">Xmx</span>
+                    <input type="text" class="form-control form-control-sm quick-mem-input xmx-input"
+                        value="${item.xmx}" data-line="${item.lineIndex}" placeholder="512m">
+                    <button class="btn btn-sm apply-jvm-btn" data-line="${item.lineIndex}"
+                        style="font-size:0.72rem; padding:2px 8px; background:#2a1e0d; border:1px solid #9b6b0f; color:#d4920f;">Applica</button>
+                </div>
+            </div>`;
+        });
+        container.innerHTML = html;
+
+        container.querySelectorAll('.apply-jvm-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const lineIdx = parseInt(this.dataset.line);
+                const xms = container.querySelector(`.xms-input[data-line="${lineIdx}"]`).value.trim();
+                const xmx = container.querySelector(`.xmx-input[data-line="${lineIdx}"]`).value.trim();
+                const lines = editor.getValue().split('\n');
+                let line = lines[lineIdx];
+                if (xms) line = line.replace(/-Xms\d+[mMgG]/, '-Xms' + xms);
+                if (xmx) line = line.replace(/-Xmx\d+[mMgG]/, '-Xmx' + xmx);
+                lines[lineIdx] = line;
+                editor.setValue(lines.join('\n'));
+                refreshJvmPanel();
+                autoSave();
+            });
+        });
+    }
+
+    function refreshJvmPanel() {
+        if (!editor) return;
+        renderJvmPanel(parseJvmMemory(editor.getValue()));
+    }
+
+    // ── Search ───────────────────────────────────────────────────────
+    let _searchMarks = [], _searchMatches = [], _searchIdx = -1;
+
+    function toggleSearch() {
+        const bar = document.getElementById('editor-search-bar');
+        const visible = bar.style.display !== 'none';
+        if (visible) { closeSearch(); } else { openSearch(); }
+    }
+
+    function openSearch() {
+        const bar = document.getElementById('editor-search-bar');
+        bar.style.display = 'flex';
+        const input = document.getElementById('editor-search-input');
+        input.value = '';
+        input.focus();
+        _clearSearchMarks();
+        document.getElementById('editor-search-count').textContent = '';
+
+        input.addEventListener('input', _onSearchInput);
+        input.addEventListener('keydown', _onSearchKey);
+    }
+
+    function closeSearch() {
+        const bar = document.getElementById('editor-search-bar');
+        bar.style.display = 'none';
+        _clearSearchMarks();
+        _searchMatches = []; _searchIdx = -1;
+        const input = document.getElementById('editor-search-input');
+        input.removeEventListener('input', _onSearchInput);
+        input.removeEventListener('keydown', _onSearchKey);
+        input.classList.remove('no-match');
+        document.getElementById('editor-search-count').textContent = '';
+        editor.focus();
+    }
+
+    function _onSearchInput() {
+        const q = this.value;
+        _runSearch(q);
+        if (_searchMatches.length > 0) { _goToMatch(0); }
+    }
+
+    function _onSearchKey(e) {
+        if (e.key === 'Escape') { closeSearch(); return; }
+        if (e.key === 'Enter') { e.preventDefault(); searchNav(e.shiftKey ? -1 : 1); }
+    }
+
+    function _runSearch(query) {
+        _clearSearchMarks();
+        _searchMatches = [];
+        _searchIdx = -1;
+        const input = document.getElementById('editor-search-input');
+
+        if (!query) { input.classList.remove('no-match'); _updateCount(); return; }
+
+        const content = editor.getValue();
+        const lowerContent = content.toLowerCase();
+        const lowerQuery = query.toLowerCase();
+        let pos = 0;
+        while (true) {
+            const idx = lowerContent.indexOf(lowerQuery, pos);
+            if (idx === -1) break;
+            const from = editor.posFromIndex(idx);
+            const to   = editor.posFromIndex(idx + query.length);
+            _searchMatches.push({ from, to });
+            pos = idx + 1;
+        }
+        input.classList.toggle('no-match', _searchMatches.length === 0);
+        _applyMarks(-1);
+        _updateCount();
+    }
+
+    function _applyMarks(currentIdx) {
+        _clearSearchMarks();
+        _searchMatches.forEach((m, i) => {
+            const cls = i === currentIdx ? 'cm-search-current' : 'cm-search-highlight';
+            _searchMarks.push(editor.markText(m.from, m.to, { className: cls }));
+        });
+    }
+
+    function _goToMatch(idx) {
+        if (_searchMatches.length === 0) return;
+        _searchIdx = ((idx % _searchMatches.length) + _searchMatches.length) % _searchMatches.length;
+        _applyMarks(_searchIdx);
+        const m = _searchMatches[_searchIdx];
+        editor.scrollIntoView({ from: m.from, to: m.to }, 80);
+        editor.setCursor(m.from);
+        _updateCount();
+    }
+
+    function searchNav(dir) {
+        const q = document.getElementById('editor-search-input').value;
+        if (!q) return;
+        if (_searchMatches.length === 0) _runSearch(q);
+        if (_searchMatches.length === 0) return;
+        _goToMatch(_searchIdx + dir);
+    }
+
+    function _clearSearchMarks() {
+        _searchMarks.forEach(m => m.clear());
+        _searchMarks = [];
+    }
+
+    function _updateCount() {
+        const el = document.getElementById('editor-search-count');
+        if (_searchMatches.length === 0) {
+            el.textContent = document.getElementById('editor-search-input').value ? '0/0' : '';
+        } else {
+            el.textContent = (_searchIdx + 1) + '/' + _searchMatches.length;
+        }
+    }
+
+    // ── refresh all ──────────────────────────────────────────────────
+    function refreshAllPanels() {
+        refreshPortsPanel();
+        refreshReplicasPanel();
+        refreshProfilesPanel();
+        refreshJvmPanel();
+    }
+</script>
+</body>
+</html>

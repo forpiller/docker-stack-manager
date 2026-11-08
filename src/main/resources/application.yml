@@ -1,0 +1,11 @@
+app:
+  scan-root: /Users/raffaeledellaquila/IdeaProjects
+  os: MAC
+  max-scan-depth: 5
+
+server:
+  port: 7892
+
+spring:
+  thymeleaf:
+    cache: false

@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="it" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Docker Stack Manager</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <style>
+        html { overflow-x: hidden; }
+        body { background: #1e2030; color: #e0e0e0; overflow-x: hidden; }
+        .navbar { background: #1e3a5f !important; border-bottom: 1px solid #2d5a8e; }
+        .card { background: #252939; border: 1px solid #2d3a52; }
+        .card-header { background: #2d3a52; color: #e0e0e0; }
+        .card-body { color: #e0e0e0; }
+        .form-control { color: #e0e0e0; }
+        .text-muted { color: #8899aa !important; }
+        pre { background: #14161e; color: #00ff88; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; }
+        .badge-stack { background: #2d5a8e; }
+        .card.stack-active { border-color: #0f9b58 !important; border-width: 2px !important; box-shadow: 0 0 16px rgba(15,155,88,0.4); }
+        .card.stack-active .card-header { background: linear-gradient(135deg, #0d2a1e 0%, #113522 100%) !important; border-bottom: 2px solid #0f9b58; }
+        .badge-running { display:inline-flex; align-items:center; gap:6px; background:#0f9b58; color:#fff; border:none; font-size:0.78rem; padding:5px 12px; border-radius:20px; font-weight:800; letter-spacing:0.08em; box-shadow:0 0 12px rgba(15,155,88,0.8), 0 2px 6px rgba(0,0,0,0.4); text-transform:uppercase; }
+        .pulse-dot { width:9px; height:9px; background:#fff; border-radius:50%; animation:pulse-anim 1.2s ease-in-out infinite; flex-shrink:0; box-shadow:0 0 4px rgba(255,255,255,0.8); }
+        @keyframes pulse-anim { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.6)} }
+        /* ── Tooltip path ────────────────────────────────────────── */
+        .path-tooltip-outer { position:relative; flex-grow:1; min-width:0; cursor:default; }
+        .path-tooltip-outer::after { content: attr(data-path); position:absolute; bottom:calc(100% + 6px); left:0; background:#1a1d2e; color:#e0e0e0; border:1px solid #3a4a6a; border-radius:6px; padding:6px 10px; font-size:0.78rem; white-space:nowrap; max-width:640px; box-shadow:0 4px 16px rgba(0,0,0,0.6); pointer-events:none; opacity:0; transform:translateY(4px); transition:opacity 0.1s ease, transform 0.1s ease; z-index:9999; }
+        .path-tooltip-outer:hover::after { opacity:1; transform:translateY(0); }
+        .path-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .section-global { background: #252939; border: 1px solid #2d3a52; border-radius: 8px; padding: 20px; margin-top: 30px; }
+        .btn-deploy { background: #0f9b58; border-color: #0f9b58; }
+        .btn-deploy:hover { background: #0d8a4d; }
+        .output-area { display: none; margin-top: 10px; }
+
+        /* ── Badge stati stack ──────────────────────────────────── */
+        .badge-starting { display:inline-flex; align-items:center; gap:6px; background:#b07d00; color:#fff; border:none; font-size:0.78rem; padding:5px 12px; border-radius:20px; font-weight:800; letter-spacing:0.08em; box-shadow:0 0 12px rgba(220,160,0,0.7), 0 2px 6px rgba(0,0,0,0.4); text-transform:uppercase; }
+        .badge-error { display:inline-flex; align-items:center; gap:6px; background:#c0392b; color:#fff; border:none; font-size:0.78rem; padding:5px 12px; border-radius:20px; font-weight:800; letter-spacing:0.08em; box-shadow:0 0 12px rgba(192,57,43,0.8); text-transform:uppercase; animation:badge-blink 0.8s ease-in-out infinite; }
+        @keyframes badge-blink { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+        /* ── Card loading overlay ───────────────────────────────── */
+        .card.stack-loading { position:relative; }
+        .card.stack-loading::after { content:''; position:absolute; inset:0; border-radius:inherit; background:rgba(0,0,0,0.5); z-index:2; pointer-events:none; }
+        .stack-loading-bar { display:none; position:absolute; bottom:0; left:0; right:0; height:3px; border-radius:0 0 0.35rem 0.35rem; background:linear-gradient(90deg,transparent 0%,#4ab0dd 40%,#00c8ff 60%,transparent 100%); background-size:200% 100%; animation:stack-load-slide 1.2s linear infinite; z-index:4; }
+        .card.stack-loading .stack-loading-bar { display:block; }
+        @keyframes stack-load-slide { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        .stack-cancel-btn { display:none; position:absolute; bottom:6px; right:8px; transform:none; z-index:5; background:rgba(30,32,48,0.92); border:1px solid #555; color:#aaa; border-radius:6px; padding:3px 10px; font-size:0.72rem; cursor:pointer; white-space:nowrap; transition:border-color 0.15s,color 0.15s; }
+        .stack-cancel-btn:hover { border-color:#e94560; color:#e94560; }
+        .card.stack-loading .stack-cancel-btn { display:block; }
+
+        /* ── Vista lista ─────────────────────────────────────────── */
+        #stacks-container.view-list .stack-col { width:100%; max-width:100%; flex:0 0 100%; }
+        #stacks-container.view-list .card { height:auto !important; }
+        #stacks-container.view-list .card-body { display:flex; align-items:center; gap:12px; padding:8px 12px; flex-wrap:nowrap; }
+        #stacks-container.view-list .stack-meta { flex:1 1 260px; min-width:0; }
+        #stacks-container.view-list .stack-meta .stack-deploy-cmd { display:none; }
+        #stacks-container.view-list .stack-actions-primary,
+        #stacks-container.view-list .stack-actions-ajax { margin:0; flex-shrink:0; }
+        #stacks-container.view-list .stack-scale { display:none; }
+        #stacks-container.view-list .output-area { display:none !important; }
+        #stacks-container.view-list .stack-meta p { margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:320px; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark mb-4">
+    <div class="container-fluid">
+        <span class="navbar-brand fw-bold"><i class="fas fa-boxes"></i> Docker Stack Manager</span>
+        <div class="d-flex gap-2">
+            <button id="view-toggle-btn" class="btn btn-outline-secondary btn-sm" onclick="toggleView()" title="Cambia visualizzazione">
+                <i class="fas fa-list"></i>
+            </button>
+            <button id="btn-add-project" class="btn btn-outline-info btn-sm" title="Aggiungi progetto">
+                <i class="fas fa-folder-plus"></i> Aggiungi
+            </button>
+            <a href="/containers" class="btn btn-outline-secondary btn-sm"><i class="fas fa-cube"></i> Containers</a>
+            <a href="/refresh" class="btn btn-outline-light btn-sm"><i class="fas fa-sync-alt"></i> Refresh</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container-fluid px-4">
+
+    <!-- Flash messages -->
+    <div th:if="${message}" class="alert alert-success alert-dismissible fade show" role="alert">
+        <pre th:text="${message}" style="background:transparent; color:inherit; padding:0; margin:0;"></pre>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    <div th:if="${error}" class="alert alert-danger alert-dismissible fade show" role="alert">
+        <pre th:text="${error}" style="background:transparent; color:inherit; padding:0; margin:0;"></pre>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
+    <!-- Sezione Docker Globale -->
+    <div class="section-global mb-4">
+        <h5 class="mb-3"><i class="fas fa-terminal"></i> Docker Globale</h5>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            <button class="btn btn-outline-light btn-sm" onclick="globalFetch('/docker/ps', 'GET')">
+                <i class="fas fa-list"></i> docker ps
+            </button>
+            <button class="btn btn-outline-light btn-sm" onclick="globalFetch('/docker/images', 'GET')">
+                <i class="fas fa-layer-group"></i> docker images
+            </button>
+            <button class="btn btn-outline-light btn-sm" onclick="fetchStacks()">
+                <i class="fas fa-layer-group"></i> docker stack ls
+            </button>
+            <button class="btn btn-outline-light btn-sm" onclick="globalFetch('/docker/stats', 'GET')">
+                <i class="fas fa-tachometer-alt"></i> docker stats
+            </button>
+            <button class="btn btn-outline-danger btn-sm confirm-action"
+                    data-title="Docker System Prune"
+                    data-message="Questa operazione rimuove <strong>immagini, container e volumi inutilizzati</strong>. Continuare?"
+                    data-confirm-class="btn-danger"
+                    data-fetch-url="/docker/prune"
+                    data-fetch-method="POST">
+                <i class="fas fa-trash"></i> docker system prune
+            </button>
+        </div>
+        <div id="global-output" style="min-height:60px; background:#14161e; color:#00ff88; font-family:monospace; font-size:0.8rem; border:1px solid #2d3a52; border-radius:6px; padding:12px;"></div>
+    </div>
+
+    <!-- Stack Cards -->
+    <div class="row g-3" id="stacks-container">
+        <div class="col-xl-4 col-lg-6 col-md-12 stack-col" th:each="stack : ${stacks}">
+            <div class="card h-100" th:id="'stack-card-' + ${stack.id}"
+                 th:classappend="${activeProjectIds.contains(stack.id)} ? 'stack-active' : ''">
+                <div class="stack-loading-bar"></div>
+                <button class="stack-cancel-btn" th:data-stack-id="${stack.id}">
+                    <i class="fas fa-times-circle" style="margin-right:5px;"></i>Annulla
+                </button>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="fw-bold" th:text="${stack.displayName}"></span>
+                    </div>
+                    <span class="badge badge-stack rounded-pill" th:text="${stack.stackName}"></span>
+                </div>
+                <div class="card-body">
+                    <div class="stack-meta">
+                        <div class="mb-1 d-flex align-items-center gap-2">
+                            <div class="path-tooltip-outer" th:attr="data-path=${stack.filePath}">
+                                <p class="text-muted small mb-0 path-text" th:text="${stack.filePath}"></p>
+                            </div>
+                            <span th:if="${activeProjectIds.contains(stack.id)}"
+                                  class="badge-running flex-shrink-0 stack-status-badge"
+                                  th:id="'badge-' + ${stack.id}">
+                                <span class="pulse-dot"></span> RUNNING
+                            </span>
+                        </div>
+                        <div class="stack-deploy-cmd mb-2" th:if="${stack.hasDeployCommand()}">
+                            <div class="deploy-cmd-display d-flex align-items-start gap-1">
+                                <code class="deploy-cmd-text" style="color:#00ff88; font-size:0.7rem; word-break:break-all;" th:text="${stack.deployCommand}"></code>
+                                <button class="btn-edit-cmd" th:data-stack-id="${stack.id}" title="Modifica comando" style="background:none; border:none; color:#8899aa; font-size:0.75rem; padding:0 2px; cursor:pointer; flex-shrink:0;">
+                                    <i class="fas fa-pencil-alt"></i>
+                                </button>
+                            </div>
+                            <div class="deploy-cmd-edit" style="display:none;">
+                                <input type="text" class="deploy-cmd-input form-control form-control-sm bg-dark text-light border-secondary mb-1"
+                                       th:value="${stack.deployCommand}" style="font-size:0.72rem; font-family:monospace;">
+                                <div class="d-flex gap-1">
+                                    <button class="btn btn-sm btn-outline-success save-cmd-btn" th:data-stack-id="${stack.id}" style="font-size:0.72rem; padding:1px 8px;">Salva</button>
+                                    <button class="btn btn-sm btn-outline-secondary cancel-cmd-btn" style="font-size:0.72rem; padding:1px 8px;">Annulla</button>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="stack-deploy-cmd text-warning small mb-2" th:unless="${stack.hasDeployCommand()}">
+                            <i class="fas fa-exclamation-triangle"></i> Nessun comando deploy trovato
+                        </p>
+                    </div>
+
+                    <!-- Azioni principali -->
+                    <div class="d-flex flex-wrap gap-2 mb-3 stack-actions-primary">
+                        <button type="button" class="btn btn-deploy btn-sm text-white confirm-action"
+                                th:disabled="${!stack.hasDeployCommand()}"
+                                data-ajax-action="deploy"
+                                th:data-stack-id="${stack.id}"
+                                th:data-stack-name="${stack.stackName}"
+                                data-title="Avvia Deploy"
+                                th:data-message="'Avviare il deploy dello stack <strong>' + ${stack.stackName} + '</strong>?'"
+                                data-confirm-class="btn-success">
+                            <i class="fas fa-play"></i> Deploy
+                        </button>
+                        <button type="button" class="btn btn-danger btn-sm confirm-action"
+                                data-ajax-action="remove"
+                                th:data-stack-id="${stack.id}"
+                                th:data-stack-name="${stack.stackName}"
+                                data-title="Rimuovi Stack"
+                                th:data-message="'Rimuovere lo stack <strong>' + ${stack.stackName} + '</strong>? I container verranno fermati.'"
+                                data-confirm-class="btn-danger">
+                            <i class="fas fa-stop"></i> Remove
+                        </button>
+                        <a th:href="'/stacks/' + ${stack.id} + '/edit'" class="btn btn-outline-warning btn-sm">
+                            <i class="fas fa-pencil-alt"></i> Modifica
+                        </a>
+                        <a th:href="'/stacks/' + ${stack.id} + '/logs'" class="btn btn-outline-info btn-sm" target="_blank">
+                            <i class="fas fa-file-alt"></i> Log
+                        </a>
+                    </div>
+
+                    <!-- Azioni AJAX -->
+                    <div class="d-flex flex-wrap gap-2 mb-2 stack-actions-ajax">
+                        <button class="btn btn-outline-light btn-sm ajax-btn"
+                                th:data-url="'/stacks/' + ${stack.id} + '/status'"
+                                th:data-target="'output-' + ${stack.id}"
+                                th:data-label="'Stato — ' + ${stack.stackName}"
+                                th:data-command="'docker stack ps ' + ${stack.stackName}">
+                            <i class="fas fa-heartbeat"></i> Stato
+                        </button>
+                        <button class="btn btn-outline-light btn-sm ajax-btn"
+                                th:data-url="'/stacks/' + ${stack.id} + '/services-list'"
+                                th:data-target="'output-' + ${stack.id}"
+                                th:data-label="'Servizi — ' + ${stack.stackName}"
+                                th:data-command="'docker stack services ' + ${stack.stackName}">
+                            <i class="fas fa-project-diagram"></i> Servizi
+                        </button>
+                    </div>
+
+                    <!-- Scale -->
+                    <div class="stack-scale">
+                        <div th:if="${!activeProjectIds.contains(stack.id)}"
+                             title="Stack non attivo — esegui prima il Deploy"
+                             style="opacity:0.35; pointer-events:none; cursor:not-allowed;">
+                            <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
+                                <select class="form-select form-select-sm border-secondary" disabled
+                                        style="max-width:220px; background-color:#1a2130; color:#666;">
+                                    <option>— stack non attivo —</option>
+                                </select>
+                                <input type="number" class="form-control form-control-sm border-secondary"
+                                       value="1" disabled style="max-width:70px; background:#1a2130; color:#666;">
+                                <button class="btn btn-outline-secondary btn-sm" disabled>
+                                    <i class="fas fa-expand-arrows-alt"></i> Scale
+                                </button>
+                            </div>
+                        </div>
+                        <form th:if="${activeProjectIds.contains(stack.id)}"
+                              th:action="'/stacks/' + ${stack.id} + '/scale'" method="post"
+                              class="d-flex gap-2 align-items-center mb-2 flex-wrap">
+                            <select name="serviceName" class="form-select form-select-sm bg-dark text-light border-secondary scale-svc-select"
+                                    th:id="'scale-svc-' + ${stack.id}"
+                                    th:data-stack-id="${stack.id}"
+                                    style="max-width:220px; color:#e0e0e0; background-color:#1a2130;">
+                                <option value="">— seleziona servizio —</option>
+                            </select>
+                            <input type="number" name="replicas" class="form-control form-control-sm bg-dark text-light border-secondary"
+                                   value="1" min="0" style="max-width:70px">
+                            <button type="submit" class="btn btn-outline-secondary btn-sm">
+                                <i class="fas fa-expand-arrows-alt"></i> Scale
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Output AJAX -->
+                    <div th:id="'output-' + ${stack.id}" class="output-area">
+                        <pre th:id="'pre-' + ${stack.id}"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div th:if="${#lists.isEmpty(stacks)}" class="col-12">
+            <div class="alert alert-warning">
+                Nessun <code>docker-stack.yml</code> trovato. Verifica la configurazione <code>app.scan-root</code> in <code>application.yml</code>.
+            </div>
+        </div>
+    </div>
+
+
+</div>
+
+<!-- Modal aggiungi progetto -->
+<div class="modal fade" id="addProjectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="background:#252939; border:1px solid #2d3a52; color:#e0e0e0;">
+            <div class="modal-header" style="border-bottom:1px solid #2d3a52;">
+                <h5 class="modal-title"><i class="fas fa-folder-plus" style="color:#4ab0dd;"></i> Aggiungi progetto</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">Seleziona la cartella del progetto che contiene un <code>docker-stack.yml</code>. La cartella verrà ricordata anche dopo il riavvio.</p>
+                <div class="d-flex gap-2 mb-2">
+                    <input type="text" id="add-project-path" class="form-control form-control-sm bg-dark text-light border-secondary"
+                           placeholder="/Users/raffaele/IdeaProjects/mio-progetto"
+                           style="font-family:monospace; font-size:0.82rem;">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-browse-project" title="Sfoglia" style="white-space:nowrap;">
+                        <i class="fas fa-folder-open"></i>
+                    </button>
+                </div>
+                <div id="add-project-result" style="font-size:0.83rem; min-height:1.2em;"></div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid #2d3a52;">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Annulla
+                </button>
+                <button type="button" class="btn btn-info btn-sm" id="btn-confirm-add-project">
+                    <i class="fas fa-plus"></i> Aggiungi
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal output Stato/Servizi -->
+<div class="modal fade" id="outputModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content" style="background:#252939; border:1px solid #2d3a52; color:#e0e0e0;">
+            <div class="modal-header" style="border-bottom:1px solid #2d3a52;">
+                <h6 class="modal-title mb-0" id="outputModalTitle" style="font-family:monospace; color:#00ff88;"></h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <pre id="outputModalPre" style="margin:0; background:#14161e; color:#00ff88; font-family:monospace; font-size:0.8rem; padding:16px; max-height:70vh; overflow:auto; white-space:pre; border-radius:0 0 4px 4px;">Caricamento...</pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal conferma azioni -->
+<div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="background:#252939; border:1px solid #2d3a52; color:#e0e0e0;">
+            <div class="modal-header" style="border-bottom:1px solid #2d3a52;">
+                <h5 class="modal-title" id="confirmModalTitle"></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="confirmModalMessage"></div>
+            <div class="modal-footer" style="border-top:1px solid #2d3a52;">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Annulla
+                </button>
+                <button type="button" class="btn" id="confirmModalBtn">
+                    <i class="fas fa-check"></i> Conferma
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast notifica stato operazione -->
+<div id="stack-op-toast" style="
+    display:none; position:fixed; bottom:28px; right:28px; z-index:9999;
+    background:#252939; border:1px solid #3a4a6a; border-radius:10px;
+    padding:14px 20px; min-width:260px; max-width:380px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.6); color:#e0e0e0;
+    font-size:0.88rem; display:none; align-items:center; gap:12px;">
+    <span id="stack-op-toast-icon" style="font-size:1.1rem;"></span>
+    <span id="stack-op-toast-msg"></span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    const addProjectModal = new bootstrap.Modal(document.getElementById('addProjectModal'));
+
+    document.getElementById('btn-add-project').addEventListener('click', () => {
+        document.getElementById('add-project-path').value = '';
+        document.getElementById('add-project-result').textContent = '';
+        addProjectModal.show();
+        setTimeout(() => document.getElementById('add-project-path').focus(), 300);
+    });
+
+    document.getElementById('btn-browse-project').addEventListener('click', async () => {
+        const btn = document.getElementById('btn-browse-project');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        try {
+            const res = await fetch('/stacks/pick-folder');
+            const data = await res.json();
+            if (!data.cancelled && data.path) {
+                document.getElementById('add-project-path').value = data.path;
+            }
+        } catch (_) { /* ignora */ } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-folder-open"></i>';
+        }
+    });
+
+    document.getElementById('btn-confirm-add-project').addEventListener('click', async () => {
+        const path = document.getElementById('add-project-path').value.trim();
+        const resultEl = document.getElementById('add-project-result');
+        const btn = document.getElementById('btn-confirm-add-project');
+        if (!path) { resultEl.textContent = 'Inserisci un percorso.'; resultEl.style.color = '#f28b8b'; return; }
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ricerca...';
+        resultEl.textContent = '';
+        try {
+            const res = await fetch('/stacks/add-project', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'folderPath=' + encodeURIComponent(path)
+            });
+            const data = await res.json();
+            if (data.success) {
+                resultEl.style.color = '#5fd98a';
+                resultEl.textContent = '✓ ' + data.message;
+                setTimeout(() => {
+                    addProjectModal.hide();
+                    window.location.reload();
+                }, 1200);
+            } else {
+                resultEl.style.color = '#f28b8b';
+                resultEl.textContent = '✗ ' + data.message;
+            }
+        } catch (e) {
+            resultEl.style.color = '#f28b8b';
+            resultEl.textContent = '✗ Errore di rete';
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-plus"></i> Aggiungi';
+        }
+    });
+
+    // Enter nel campo path = click su Aggiungi
+    document.getElementById('add-project-path').addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('btn-confirm-add-project').click();
+    });
+
+    const confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+    const confirmModalTitle = document.getElementById('confirmModalTitle');
+    const confirmModalMessage = document.getElementById('confirmModalMessage');
+
+    let _confirmHandler = null;
+    document.getElementById('confirmModalBtn').addEventListener('click', function() {
+        if (_confirmHandler) { _confirmHandler(); _confirmHandler = null; }
+    });
+
+    function showOpToast(icon, msg, autoDismissMs) {
+        const toast = document.getElementById('stack-op-toast');
+        document.getElementById('stack-op-toast-icon').innerHTML = icon;
+        document.getElementById('stack-op-toast-msg').textContent = msg;
+        toast.style.display = 'flex';
+        if (toast._tid) clearTimeout(toast._tid);
+        if (autoDismissMs) {
+            toast._tid = setTimeout(() => { toast.style.display = 'none'; }, autoDismissMs);
+        }
+    }
+    function hideOpToast() {
+        const toast = document.getElementById('stack-op-toast');
+        if (toast._tid) clearTimeout(toast._tid);
+        toast.style.display = 'none';
+    }
+
+    // Ripristina preferenza vista al caricamento
+    (function() {
+        if (localStorage.getItem('dsm-view') === 'list') {
+            document.getElementById('stacks-container').classList.add('view-list');
+            const btn = document.getElementById('view-toggle-btn');
+            if (btn) btn.innerHTML = '<i class="fas fa-th-large"></i>';
+        }
+    })();
+
+    function toggleView() {
+        const container = document.getElementById('stacks-container');
+        const isNowList = container.classList.toggle('view-list');
+        localStorage.setItem('dsm-view', isNowList ? 'list' : 'grid');
+        const btn = document.getElementById('view-toggle-btn');
+        btn.innerHTML = isNowList ? '<i class="fas fa-th-large"></i>' : '<i class="fas fa-list"></i>';
+    }
+
+    function loadScaleServices(stackId) {
+        const selectEl = document.getElementById('scale-svc-' + stackId);
+        if (!selectEl) return;
+        selectEl.disabled = true;
+        selectEl.innerHTML = '<option>Caricamento...</option>';
+        fetch('/stacks/' + stackId + '/services-list')
+            .then(r => r.text())
+            .then(text => {
+                const lines = text.trim().split('\n').slice(1);
+                selectEl.innerHTML = '<option value="">— seleziona servizio —</option>';
+                lines.forEach(line => {
+                    const parts = line.trim().split(/\s+/);
+                    if (parts.length >= 2 && parts[1]) {
+                        const opt = document.createElement('option');
+                        opt.value = parts[1];
+                        opt.textContent = parts[1];
+                        selectEl.appendChild(opt);
+                    }
+                });
+                selectEl.disabled = false;
+            })
+            .catch(() => {
+                selectEl.innerHTML = '<option value="">Errore caricamento</option>';
+                selectEl.disabled = false;
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+
+        // ── Card loading / badge helpers ─────────────────────
+        const _pollCancelled = new Set();
+
+        function cancelPolling(stackId) {
+            _pollCancelled.add(stackId);
+            setCardLoading(stackId, false);
+            // don't touch badge — leave it as-is so user sees where it stopped
+            hideOpToast();
+        }
+
+        function setCardLoading(stackId, loading) {
+            const card = document.getElementById('stack-card-' + stackId);
+            if (!card) return;
+            card.classList.toggle('stack-loading', loading);
+            if (!loading) _pollCancelled.delete(stackId);
+        }
+
+        // attach cancel button handler after DOM ready
+        document.querySelectorAll('.stack-cancel-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                cancelPolling(this.dataset.stackId);
+            });
+        });
+
+        function setBadge(stackId, state) {
+            // state: 'running' | 'starting' | 'error' | 'none'
+            let el = document.getElementById('badge-' + stackId);
+            const card = document.getElementById('stack-card-' + stackId);
+            if (!card) return;
+
+            if (state === 'none') {
+                if (el) el.remove();
+                card.classList.remove('stack-active');
+                return;
+            }
+
+            if (!el) {
+                const container = card.querySelector('.mb-1.d-flex.align-items-center');
+                if (!container) return;
+                el = document.createElement('span');
+                el.id = 'badge-' + stackId;
+                el.classList.add('flex-shrink-0', 'stack-status-badge');
+                container.appendChild(el);
+            }
+
+            if (state === 'running') {
+                el.className = 'badge-running flex-shrink-0 stack-status-badge';
+                el.innerHTML = '<span class="pulse-dot"></span> RUNNING';
+                card.classList.add('stack-active');
+            } else if (state === 'starting') {
+                el.className = 'badge-starting flex-shrink-0 stack-status-badge';
+                el.innerHTML = '<i class="fas fa-spinner fa-spin" style="font-size:0.75rem;"></i> STARTING';
+                card.classList.add('stack-active');
+            } else if (state === 'error') {
+                el.className = 'badge-error flex-shrink-0 stack-status-badge';
+                el.innerHTML = '<i class="fas fa-exclamation-triangle" style="font-size:0.75rem;"></i> ERROR';
+                card.classList.add('stack-active');
+            }
+        }
+
+        async function pollDeploy(stackId, stackName = '', maxWaitMs = 120000) {
+            const start = Date.now();
+            const gracePeriodMs = 40000;
+            while (Date.now() - start < maxWaitMs) {
+                await new Promise(r => setTimeout(r, 2500));
+                if (_pollCancelled.has(stackId)) return;
+                const elapsed = Date.now() - start;
+                try {
+                    const res = await fetch('/stacks/' + stackId + '/active-status');
+                    const data = await res.json();
+                    if (_pollCancelled.has(stackId)) return;
+                    if (data.hasError && elapsed >= gracePeriodMs) {
+                        setBadge(stackId, 'error');
+                        setCardLoading(stackId, false);
+                        showOpToast('<i class="fas fa-exclamation-triangle" style="color:#e94560;"></i>',
+                            '"' + stackName + '" ha avuto un errore — controlla i log', 8000);
+                        return;
+                    }
+                    if (data.allRunning) {
+                        setBadge(stackId, 'running');
+                        setCardLoading(stackId, false);
+                        showOpToast('<i class="fas fa-check-circle" style="color:#0f9b58;"></i>',
+                            '"' + stackName + '" è attivo e running', 4000);
+                        return;
+                    }
+                    if (!data.active) {
+                        setBadge(stackId, 'none');
+                        setCardLoading(stackId, false);
+                        hideOpToast();
+                        return;
+                    }
+                } catch (_) { /* retry */ }
+            }
+            setCardLoading(stackId, false);
+            showOpToast('<i class="fas fa-clock" style="color:#f0c040;"></i>',
+                'Timeout — verifica manualmente lo stato di "' + stackName + '"', 7000);
+        }
+
+        async function pollRemove(stackId, stackName = '', maxWaitMs = 60000) {
+            const start = Date.now();
+            while (Date.now() - start < maxWaitMs) {
+                await new Promise(r => setTimeout(r, 2000));
+                if (_pollCancelled.has(stackId)) return;
+                try {
+                    const res = await fetch('/stacks/' + stackId + '/active-status');
+                    const data = await res.json();
+                    if (_pollCancelled.has(stackId)) return;
+                    if (!data.active) {
+                        setBadge(stackId, 'none');
+                        setCardLoading(stackId, false);
+                        showOpToast('<i class="fas fa-check-circle" style="color:#4ab0dd;"></i>',
+                            '"' + stackName + '" rimosso con successo', 4000);
+                        return;
+                    }
+                } catch (_) { /* retry */ }
+            }
+            setCardLoading(stackId, false);
+            showOpToast('<i class="fas fa-clock" style="color:#f0c040;"></i>',
+                'Timeout — verifica manualmente lo stato di "' + stackName + '"', 7000);
+        }
+
+        // Gestione modal di conferma
+        document.querySelectorAll('.confirm-action').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const title = this.dataset.title || 'Conferma';
+                const message = this.dataset.message || 'Sei sicuro?';
+                const confirmClass = this.dataset.confirmClass || 'btn-primary';
+                const formId = this.dataset.form;
+                const fetchUrl = this.dataset.fetchUrl;
+                const fetchMethod = this.dataset.fetchMethod;
+                const ajaxAction = this.dataset.ajaxAction;
+                const stackId = this.dataset.stackId;
+                const stackName = this.dataset.stackName || stackId || '';
+
+                confirmModalTitle.textContent = title;
+                confirmModalMessage.innerHTML = message;
+
+                const confirmBtn = document.getElementById('confirmModalBtn');
+                confirmBtn.className = 'btn ' + confirmClass;
+                confirmBtn.innerHTML = '<i class="fas fa-check"></i> Conferma';
+
+                _confirmHandler = function() {
+                    confirmModal.hide();
+                    if (ajaxAction && stackId) {
+                        setCardLoading(stackId, true);
+                        if (ajaxAction === 'deploy') {
+                            setBadge(stackId, 'starting');
+                            showOpToast(
+                                '<i class="fas fa-spinner fa-spin" style="color:#f0c040;"></i>',
+                                'Deploy di "' + stackName + '" avviato — attendi...'
+                            );
+                            fetch('/stacks/' + stackId + '/deploy-action', { method: 'POST' })
+                                .then(r => r.json())
+                                .then(data => {
+                                    if (!data.success) {
+                                        setBadge(stackId, 'error');
+                                        setCardLoading(stackId, false);
+                                        showOpToast('<i class="fas fa-times-circle" style="color:#e94560;"></i>', 'Errore deploy: ' + (data.message || ''), 6000);
+                                    } else {
+                                        pollDeploy(stackId, stackName);
+                                    }
+                                })
+                                .catch(() => {
+                                    setBadge(stackId, 'error');
+                                    setCardLoading(stackId, false);
+                                    showOpToast('<i class="fas fa-times-circle" style="color:#e94560;"></i>', 'Errore di rete', 5000);
+                                });
+                        } else if (ajaxAction === 'remove') {
+                            showOpToast(
+                                '<i class="fas fa-spinner fa-spin" style="color:#4ab0dd;"></i>',
+                                'Rimozione di "' + stackName + '" in corso...'
+                            );
+                            fetch('/stacks/' + stackId + '/remove-action', { method: 'POST' })
+                                .then(r => r.json())
+                                .then(data => {
+                                    if (!data.success) {
+                                        setCardLoading(stackId, false);
+                                        showOpToast('<i class="fas fa-times-circle" style="color:#e94560;"></i>', 'Errore rimozione', 5000);
+                                    } else {
+                                        pollRemove(stackId, stackName);
+                                    }
+                                })
+                                .catch(() => {
+                                    setCardLoading(stackId, false);
+                                    showOpToast('<i class="fas fa-times-circle" style="color:#e94560;"></i>', 'Errore di rete', 5000);
+                                });
+                        }
+                    } else if (formId) {
+                        document.getElementById(formId).submit();
+                    } else if (fetchUrl) {
+                        globalFetch(fetchUrl, fetchMethod || 'GET');
+                    }
+                };
+
+                confirmModal.show();
+            });
+        });
+
+        // Edit inline comando deploy
+        document.querySelectorAll('.btn-edit-cmd').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const block = this.closest('.stack-deploy-cmd');
+                block.querySelector('.deploy-cmd-display').style.display = 'none';
+                block.querySelector('.deploy-cmd-edit').style.display = 'block';
+                block.querySelector('.deploy-cmd-input').focus();
+            });
+        });
+        document.querySelectorAll('.cancel-cmd-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const block = this.closest('.stack-deploy-cmd');
+                block.querySelector('.deploy-cmd-display').style.display = '';
+                block.querySelector('.deploy-cmd-edit').style.display = 'none';
+            });
+        });
+        document.querySelectorAll('.save-cmd-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const stackId = this.dataset.stackId;
+                const block = this.closest('.stack-deploy-cmd');
+                const newCmd = block.querySelector('.deploy-cmd-input').value.trim();
+                if (!newCmd) return;
+                const saveBtn = this;
+                saveBtn.disabled = true;
+                fetch('/stacks/' + stackId + '/deploy-command', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: 'command=' + encodeURIComponent(newCmd)
+                })
+                .then(r => r.json())
+                .then(result => {
+                    saveBtn.disabled = false;
+                    if (result.success) {
+                        block.querySelector('.deploy-cmd-text').textContent = newCmd;
+                        block.querySelector('.deploy-cmd-display').style.display = '';
+                        block.querySelector('.deploy-cmd-edit').style.display = 'none';
+                    } else {
+                        alert('Errore: ' + (result.error || 'salvataggio fallito'));
+                    }
+                })
+                .catch(() => { saveBtn.disabled = false; alert('Errore di rete'); });
+            });
+        });
+
+        // Auto-carica servizi al primo click sulla dropdown scale
+        document.querySelectorAll('.scale-svc-select').forEach(sel => {
+            sel.addEventListener('mousedown', function() {
+                if (this.options.length <= 1) {
+                    loadScaleServices(this.dataset.stackId);
+                }
+            });
+        });
+
+        const outputModal = new bootstrap.Modal(document.getElementById('outputModal'));
+        const outputModalTitle = document.getElementById('outputModalTitle');
+        const outputModalPre = document.getElementById('outputModalPre');
+
+        document.querySelectorAll('.ajax-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const url = this.dataset.url;
+                const label = this.dataset.label || this.textContent.trim();
+                const cmd = this.dataset.command || '';
+                outputModalTitle.innerHTML = label + (cmd ? ' <span style="color:#8899aa; font-size:0.78rem; font-weight:400;">(' + cmd + ')</span>' : '');
+                outputModalPre.textContent = 'Caricamento...';
+                outputModal.show();
+                this.disabled = true;
+                const self = this;
+
+                fetch(url, { method: 'GET' })
+                    .then(r => r.text())
+                    .then(text => {
+                        outputModalPre.textContent = text || '(nessun output)';
+                        self.disabled = false;
+                    })
+                    .catch(err => {
+                        outputModalPre.textContent = 'Errore: ' + err;
+                        self.disabled = false;
+                    });
+            });
+        });
+    });
+
+    function globalFetch(url, method) {
+        const output = document.getElementById('global-output');
+        output.innerHTML = '<span style="color:#8899aa;">Esecuzione...</span>';
+
+        fetch(url, { method: method || 'GET' })
+            .then(r => r.text())
+            .then(text => {
+                const pre = document.createElement('pre');
+                pre.style.cssText = 'margin:0; color:#00ff88; font-family:monospace; font-size:0.8rem; white-space:pre-wrap; word-break:break-all;';
+                pre.textContent = text || '(nessun output)';
+                output.innerHTML = '';
+                output.appendChild(pre);
+            })
+            .catch(err => { output.innerHTML = '<span style="color:#e94560;">Errore: ' + err + '</span>'; });
+    }
+
+    function fetchStacks() {
+        const output = document.getElementById('global-output');
+        output.innerHTML = '<span style="color:#8899aa;">Esecuzione...</span>';
+
+        fetch('/docker/stacks')
+            .then(r => r.text())
+            .then(text => {
+                const lines = text.trim().split('\n');
+                if (lines.length <= 1) {
+                    output.innerHTML = '<pre style="margin:0; color:#00ff88; font-family:monospace;">' + text + '</pre>';
+                    return;
+                }
+                // header
+                let html = '<div style="display:flex; gap:12px; padding:4px 0; border-bottom:1px solid #2d3a52; margin-bottom:6px;">';
+                html += '<span style="color:#8899aa; font-size:0.75rem; min-width:140px;">NAME</span>';
+                html += '<span style="color:#8899aa; font-size:0.75rem; min-width:60px;">SERVICES</span>';
+                html += '<span style="color:#8899aa; font-size:0.75rem;">AZIONI</span>';
+                html += '</div>';
+
+                for (let i = 1; i < lines.length; i++) {
+                    const parts = lines[i].trim().split(/\s+/);
+                    if (parts.length < 1 || !parts[0]) continue;
+                    const name = parts[0];
+                    const services = parts[1] || '';
+                    html += '<div style="display:flex; gap:12px; align-items:center; padding:4px 0; border-bottom:1px solid #1a2a3a;">';
+                    html += '<span style="color:#00ff88; font-size:0.85rem; min-width:140px;">' + name + '</span>';
+                    html += '<span style="color:#e0e0e0; font-size:0.85rem; min-width:60px;">' + services + '</span>';
+                    html += '<div style="display:flex; gap:6px;">';
+                    html += '<button class="btn btn-sm" style="background:#2d3a52; border:1px solid #3b5278; color:#e0e0e0; font-size:0.75rem;" onclick="globalFetch(\'/docker/stack/' + name + '/services\', \'GET\')">';
+                    html += '<i class="fas fa-list-ul"></i> services</button>';
+                    html += '<button class="btn btn-sm" style="background:#2d3a52; border:1px solid #3b5278; color:#e0e0e0; font-size:0.75rem;" onclick="globalFetch(\'/docker/stack/' + name + '/ps\', \'GET\')">';
+                    html += '<i class="fas fa-microchip"></i> ps</button>';
+                    html += '</div></div>';
+                }
+                output.innerHTML = html;
+            })
+            .catch(err => { output.innerHTML = '<span style="color:#e94560;">Errore: ' + err + '</span>'; });
+    }
+</script>
+</body>
+</html>

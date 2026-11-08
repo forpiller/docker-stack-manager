@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="it" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="'Log — ' + ${stack.stackName}">Log</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background: #1e2030; color: #e0e0e0; }
+        .navbar { background: #1e3a5f !important; border-bottom: 1px solid #2d5a8e; }
+        #log-output { background: #2a2d3a; color: #00ff88; font-family: monospace; font-size: 0.72rem; height: 78vh; overflow-y: auto; padding: 12px; border-radius: 6px; border: 1px solid #2d3a52; word-break: break-all; }
+        #log-output div { white-space: pre-wrap; line-height: 1.45; }
+        .log-error { color: #ff5555 !important; }
+        .log-warn  { color: #f0b429 !important; }
+        .card { background: #252939; border: 1px solid #2d3a52; }
+        .card-header { background: #2d3a52; color: #e0e0e0; }
+        .card-body { color: #e0e0e0; padding: 8px; }
+        .text-muted { color: #8899aa !important; }
+
+        /* Sidebar servizi */
+        .service-item { border-bottom: 1px solid #2d3a52; padding: 10px 8px; }
+        .service-item:last-child { border-bottom: none; }
+        .service-name { color: #e0e0e0; font-size: 0.85rem; font-weight: 600; margin-bottom: 2px; }
+        .service-replicas { color: #8899aa; font-size: 0.75rem; margin-bottom: 6px; }
+
+        /* Bottoni log sidebar */
+        .btn-log { background: #2d3a52; border: 1px solid #3b5278; color: #e0e0e0; font-size: 0.8rem; }
+        .btn-log:hover { background: #3b5278; color: #fff; }
+        .btn-log.active { background: #0f9b58; border-color: #0f9b58; color: #fff; }
+        .btn-restart { background: transparent; border: 1px solid #e09000; color: #e09000; font-size: 0.8rem; }
+        .btn-restart:hover { background: #e09000; color: #fff; }
+        .btn-clear { background: transparent; border: 1px solid #555; color: #888; font-size: 0.8rem; }
+        .btn-clear:hover { border-color: #e0e0e0; color: #e0e0e0; }
+
+        /* Header log */
+        .log-header { background: #252939; border: 1px solid #2d3a52; border-radius: 6px 6px 0 0; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 0; }
+
+        /* Scroll-to-bottom button */
+        .log-wrapper { position: relative; }
+        #scroll-bottom-btn { display:none; position:absolute; bottom:14px; right:14px; z-index:10; background:rgba(30,32,48,0.92); border:1px solid #4a7fa5; color:#7ec8e3; border-radius:20px; padding:5px 14px; font-size:0.78rem; cursor:pointer; align-items:center; gap:6px; box-shadow:0 2px 12px rgba(0,0,0,0.5); transition:background 0.15s; white-space:nowrap; }
+        #scroll-bottom-btn:hover { background:#1a2a3e; color:#aee4f8; }
+
+        /* Confirm modal */
+        #confirm-modal .modal-content { background:#252939; border:1px solid #2d3a52; color:#e0e0e0; }
+        #confirm-modal .modal-header { border-bottom:1px solid #2d3a52; }
+        #confirm-modal .modal-footer { border-top:1px solid #2d3a52; }
+        #confirm-modal .btn-close { filter: invert(1); }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark mb-4">
+    <div class="container-fluid">
+        <a href="/" class="navbar-brand"><i class="fas fa-arrow-left"></i> Docker Stack Manager</a>
+        <span class="text-light">
+            Log: <span class="badge bg-danger" th:text="${stack.stackName}"></span>
+        </span>
+    </div>
+</nav>
+
+<div class="container-fluid px-4">
+
+    <div class="row g-3">
+        <!-- Sidebar servizi -->
+        <div class="col-lg-3 col-md-4">
+            <div class="card">
+                <div class="card-header"><i class="fas fa-project-diagram"></i> Servizi</div>
+                <div class="card-body p-0">
+                    <div th:if="${#lists.isEmpty(services)}" class="text-muted small p-3">
+                        Nessun servizio trovato. Lo stack è attivo?
+                    </div>
+                    <div th:each="svc : ${services}" class="service-item">
+                        <!-- Nome corto in evidenza -->
+                        <div class="service-name" th:text="${svc.shortName()}" style="color:#00ff88;"></div>
+                        <!-- Dettagli in piccolo -->
+                        <div style="font-size:0.7rem; color:#6a7f99; margin-bottom:6px; line-height:1.4;">
+                            <span th:text="${svc.name}"></span><br>
+                            <span>ID: <code style="color:#8899aa;" th:text="${svc.id}"></code></span>
+                            &nbsp;·&nbsp;
+                            <span th:text="${svc.replicas}"></span>
+                        </div>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-log start-log-btn flex-grow-1"
+                                    th:disabled="${svc.replicas != null and svc.replicas.startsWith('0/')}"
+                                    th:classappend="${svc.replicas != null and svc.replicas.startsWith('0/')} ? 'disabled' : ''"
+                                    th:style="${svc.replicas != null and svc.replicas.startsWith('0/')} ? 'opacity:0.35; cursor:not-allowed;' : ''"
+                                    th:data-service="${svc.name}"
+                                    th:data-stack-id="${stack.id}"
+                                    th:id="'btn-' + ${svc.name.replace('.', '-')}">
+                                <i class="fas fa-terminal"></i> Log
+                            </button>
+                            <button class="btn btn-restart restart-btn"
+                                    th:data-service="${svc.name}"
+                                    th:data-stack-id="${stack.id}"
+                                    title="Riavvia servizio">
+                                <i class="fas fa-rotate"></i>
+                            </button>
+                            <button class="btn btn-restart ps-btn"
+                                    th:data-service="${svc.name}"
+                                    th:data-stack-id="${stack.id}"
+                                    title="docker service ps (task history)"
+                                    style="border-color:#4a7fa5; color:#4a7fa5;">
+                                <i class="fas fa-list-check"></i>
+                            </button>
+                        </div>
+                        <div class="d-flex gap-1 mt-1">
+                            <button class="btn scale-zero-btn flex-grow-1"
+                                    th:data-service="${svc.name}"
+                                    th:data-stack-id="${stack.id}"
+                                    title="Scale a 0 (ferma il servizio)"
+                                    style="background:transparent; border:1px solid #7a2a2a; color:#cc6666; font-size:0.75rem; padding:2px 6px;">
+                                <i class="fas fa-stop"></i> stop
+                            </button>
+                            <button class="btn scale-one-btn flex-grow-1"
+                                    th:data-service="${svc.name}"
+                                    th:data-stack-id="${stack.id}"
+                                    title="Scale a 1 (avvia il servizio)"
+                                    style="background:transparent; border:1px solid #1a6640; color:#4caf80; font-size:0.75rem; padding:2px 6px;">
+                                <i class="fas fa-play"></i> start
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Output log -->
+        <div class="col-lg-9 col-md-8">
+            <div class="log-header">
+                <span id="log-title" style="color:#8899aa; font-size:0.85rem;">
+                    <i class="fas fa-terminal"></i> Seleziona un servizio
+                </span>
+                <button class="btn btn-clear btn-sm" onclick="clearLog()">
+                    <i class="fas fa-eraser"></i> Pulisci
+                </button>
+            </div>
+            <div class="log-wrapper">
+                <div id="log-output" style="border-radius: 0 0 6px 6px;">
+                    <div id="load-history-row" style="display:none; text-align:center; padding:6px 0; border-bottom:1px solid #2d3a52; margin-bottom:4px;">
+                        <button id="load-history-btn" style="background:transparent; border:1px solid #3b5278; color:#8899aa; font-size:0.75rem; border-radius:12px; padding:3px 14px; cursor:pointer;">
+                            <i class="fas fa-arrow-up"></i> Carica ultimi 300 righe
+                        </button>
+                    </div>
+                </div>
+                <button id="scroll-bottom-btn">
+                    <i class="fas fa-arrow-down"></i>
+                    <span id="scroll-count"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Confirm modal -->
+<div class="modal fade" id="confirm-modal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="fas fa-rotate me-2" style="color:#e09000;"></i> Riavvio servizio</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="confirm-modal-body" style="font-size:0.9rem;"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Annulla</button>
+                <button type="button" class="btn btn-warning btn-sm" id="confirm-modal-ok">
+                    <i class="fas fa-rotate"></i> Riavvia
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    const eventSources = {};
+    const MAX_LOG_LINES = 500;
+    let pendingNewLines = 0;
+
+    // Batch rendering
+    let lineBuffer = [];
+    let rafScheduled = false;
+
+    function isAtBottom(el) {
+        return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    }
+
+    function updateScrollBtn() {
+        const btn = document.getElementById('scroll-bottom-btn');
+        const countEl = document.getElementById('scroll-count');
+        if (pendingNewLines > 0) {
+            countEl.textContent = pendingNewLines + ' nuove righe';
+            btn.style.display = 'flex';
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+
+    function flushBuffer() {
+        rafScheduled = false;
+        if (lineBuffer.length === 0) return;
+        const container = document.getElementById('log-output');
+        const atBottom = isAtBottom(container);
+        const frag = document.createDocumentFragment();
+        let added = 0;
+        for (const text of lineBuffer) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            if (/\bERROR\b/i.test(text)) div.className = 'log-error';
+            else if (/\bWARN(?:ING)?\b/i.test(text)) div.className = 'log-warn';
+            frag.appendChild(div);
+            added++;
+        }
+        lineBuffer = [];
+        container.appendChild(frag);
+        while (container.children.length > MAX_LOG_LINES) container.removeChild(container.firstChild);
+        if (atBottom) {
+            container.scrollTop = container.scrollHeight;
+        } else {
+            pendingNewLines += added;
+            updateScrollBtn();
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Scroll listener: when user returns to bottom, hide button and resume auto-scroll
+        document.getElementById('log-output').addEventListener('scroll', function() {
+            if (isAtBottom(this)) {
+                pendingNewLines = 0;
+                updateScrollBtn();
+            }
+        });
+        // Click "Vai sotto"
+        document.getElementById('scroll-bottom-btn').addEventListener('click', function() {
+            const output = document.getElementById('log-output');
+            output.scrollTop = output.scrollHeight;
+            pendingNewLines = 0;
+            updateScrollBtn();
+        });
+
+        document.querySelectorAll('.start-log-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                if (this.classList.contains('active')) {
+                    closeLog(this.dataset.service);
+                    document.getElementById('log-title').innerHTML =
+                        '<i class="fas fa-terminal"></i> Seleziona un servizio';
+                } else {
+                    startLog(this.dataset.stackId, this.dataset.service);
+                }
+            });
+        });
+        function scaleService(svc, stackId, replicas, btn) {
+            const orig = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            fetch(`/stacks/${stackId}/services/${encodeURIComponent(svc)}/scale?replicas=${replicas}`, {
+                method: 'POST'
+            }).then(r => {
+                btn.disabled = false;
+                btn.innerHTML = orig;
+                const shortName = svc.includes('_') ? svc.substring(svc.indexOf('_') + 1) : svc;
+                appendLine(document.getElementById('log-output'), `--- scale ${shortName} → ${replicas} ${r.ok ? 'ok' : 'errore'} ---`);
+            }).catch(err => {
+                btn.disabled = false;
+                btn.innerHTML = orig;
+                appendLine(document.getElementById('log-output'), '--- errore scale: ' + err.message + ' ---');
+            });
+        }
+
+        document.querySelectorAll('.scale-zero-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const svc = this.dataset.service;
+                const shortName = svc.includes('_') ? svc.substring(svc.indexOf('_') + 1) : svc;
+                if (!confirm('Fermare (scale 0) il servizio "' + shortName + '"?')) return;
+                scaleService(svc, this.dataset.stackId, 0, this);
+            });
+        });
+
+        document.querySelectorAll('.scale-one-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                scaleService(this.dataset.service, this.dataset.stackId, 1, this);
+            });
+        });
+
+        document.querySelectorAll('.ps-btn').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                const svc = this.dataset.service;
+                const stackId = this.dataset.stackId;
+                const output = document.getElementById('log-output');
+                appendLine(output, '');
+                appendLine(output, '─── docker service ps ' + svc + ' --no-trunc ───');
+                try {
+                    const res = await fetch(`/stacks/${stackId}/services/${encodeURIComponent(svc)}/ps`);
+                    const text = await res.text();
+                    text.split('\n').forEach(line => { if (line.trim()) appendLine(output, line); });
+                } catch(e) {
+                    appendLine(output, '--- errore: ' + e.message + ' ---');
+                }
+                appendLine(output, '──────────────────────────────────────────────');
+            });
+        });
+
+        let pendingRestartBtn = null;
+        const confirmModal = new bootstrap.Modal(document.getElementById('confirm-modal'));
+
+        document.querySelectorAll('.restart-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const svc = this.dataset.service;
+                const shortName = svc.includes('_') ? svc.substring(svc.indexOf('_') + 1) : svc;
+                document.getElementById('confirm-modal-body').textContent = 'Riavviare il servizio "' + shortName + '"?';
+                pendingRestartBtn = this;
+                confirmModal.show();
+            });
+        });
+
+        document.getElementById('confirm-modal-ok').addEventListener('click', function() {
+            confirmModal.hide();
+            if (!pendingRestartBtn) return;
+            const restartBtn = pendingRestartBtn;
+            pendingRestartBtn = null;
+            const svc = restartBtn.dataset.service;
+            const stackId = restartBtn.dataset.stackId;
+            const shortName = svc.includes('_') ? svc.substring(svc.indexOf('_') + 1) : svc;
+            restartBtn.disabled = true;
+            restartBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            fetch(`/stacks/${stackId}/services/${encodeURIComponent(svc)}/restart`, { method: 'POST' })
+                .then(r => r.text())
+                .then(msg => {
+                    restartBtn.disabled = false;
+                    restartBtn.innerHTML = '<i class="fas fa-rotate"></i>';
+                    const output = document.getElementById('log-output');
+                    const label = msg === 'ok' ? '--- riavvio avviato: ' + shortName + ' ---' : '--- errore riavvio: ' + msg + ' ---';
+                    appendLine(output, label);
+                })
+                .catch(err => {
+                    restartBtn.disabled = false;
+                    restartBtn.innerHTML = '<i class="fas fa-rotate"></i>';
+                    appendLine(document.getElementById('log-output'), '--- errore fetch riavvio: ' + err.message + ' ---');
+                });
+        });
+    });
+
+    function closeLog(serviceName) {
+        if (eventSources[serviceName]) {
+            eventSources[serviceName].close();
+            delete eventSources[serviceName];
+        }
+        const btnId = 'btn-' + serviceName.replace(/\./g, '-');
+        const btn = document.getElementById(btnId);
+        if (btn) btn.classList.remove('active');
+    }
+
+    let currentLogStackId = null;
+    let currentLogService = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('load-history-btn').addEventListener('click', async function() {
+            if (!currentLogStackId || !currentLogService) return;
+            const btn = this;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Caricamento...';
+            try {
+                const res = await fetch(`/stacks/${currentLogStackId}/services/${encodeURIComponent(currentLogService)}/logs/history?lines=300`);
+                const text = await res.text();
+                const container = document.getElementById('log-output');
+                const historyRow = document.getElementById('load-history-row');
+                const scrollBefore = container.scrollHeight - container.scrollTop;
+                const frag = document.createDocumentFragment();
+                text.split('\n').filter(l => l.trim()).forEach(line => {
+                    const div = document.createElement('div');
+                    div.textContent = line;
+                    if (/\bERROR\b/i.test(line)) div.className = 'log-error';
+                    else if (/\bWARN(?:ING)?\b/i.test(line)) div.className = 'log-warn';
+                    else div.style.opacity = '0.7';
+                    frag.insertBefore(div, frag.firstChild);
+                });
+                container.insertBefore(frag, historyRow.nextSibling);
+                // Maintain scroll position
+                container.scrollTop = container.scrollHeight - scrollBefore;
+                historyRow.style.display = 'none';
+            } catch(e) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-arrow-up"></i> Carica ultimi 300 righe';
+            }
+        });
+    });
+
+    function startLog(stackId, serviceName) {
+        // Chiudi tutti gli stream attivi e deattiva tutti i bottoni
+        Object.keys(eventSources).forEach(svc => closeLog(svc));
+        closeLog(serviceName);
+
+        currentLogStackId = stackId;
+        currentLogService = serviceName;
+
+        const shortName = serviceName.includes('_') ? serviceName.substring(serviceName.indexOf('_') + 1) : serviceName;
+        document.getElementById('log-title').innerHTML = '<i class="fas fa-terminal"></i> ' + shortName + ' <small style="color:#6a7f99;">(' + serviceName + ')</small>';
+        const output = document.getElementById('log-output');
+        // Preserve load-history-row, clear only log lines
+        const historyRow = document.getElementById('load-history-row');
+        Array.from(output.children).forEach(c => { if (c !== historyRow) c.remove(); });
+        historyRow.style.display = 'block';
+        lineBuffer = [];
+        rafScheduled = false;
+        pendingNewLines = 0;
+        updateScrollBtn();
+
+        const btnId = 'btn-' + serviceName.replace(/\./g, '-');
+        const btn = document.getElementById(btnId);
+        if (btn) btn.classList.add('active');
+
+        const url = `/stacks/${stackId}/services/${encodeURIComponent(serviceName)}/logs`;
+        const es = new EventSource(url);
+        eventSources[serviceName] = es;
+
+        es.onmessage = function(e) {
+            appendLine(output, e.data);
+        };
+        es.onerror = function() {
+            appendLine(output, '--- connessione chiusa ---');
+            es.close();
+            if (btn) btn.classList.remove('active');
+        };
+    }
+
+    function appendLine(container, text) {
+        lineBuffer.push(text);
+        if (!rafScheduled) {
+            rafScheduled = true;
+            requestAnimationFrame(flushBuffer);
+        }
+    }
+
+    function clearLog() {
+        const output = document.getElementById('log-output');
+        const historyRow = document.getElementById('load-history-row');
+        Array.from(output.children).forEach(c => { if (c !== historyRow) c.remove(); });
+        lineBuffer = [];
+        rafScheduled = false;
+        pendingNewLines = 0;
+        updateScrollBtn();
+    }
+</script>
+</body>
+</html>

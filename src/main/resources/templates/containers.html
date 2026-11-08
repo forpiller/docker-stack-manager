@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="it" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Containers — Docker Stack Manager</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <style>
+        html, body { background: #1e2030; color: #e0e0e0; overflow-x: hidden; }
+        .navbar { background: #1e3a5f !important; border-bottom: 1px solid #2d5a8e; }
+
+        /* ── Table ─────────────────────────────────────────────── */
+        .c-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+        .c-table thead th {
+            background: #1a1d2e;
+            color: #8899aa;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 8px 12px;
+            border-bottom: 1px solid #2d3a52;
+            white-space: nowrap;
+        }
+        .c-table tbody tr {
+            border-bottom: 1px solid #232636;
+            transition: background 0.1s;
+        }
+        .c-table tbody tr:hover { background: #252939; }
+        .c-table tbody tr.c-row-stopped { opacity: 0.55; }
+        .c-table tbody tr.c-row-loading { background: #1a1d2e; }
+        .c-table td {
+            padding: 9px 12px;
+            font-size: 0.82rem;
+            vertical-align: middle;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 0;
+        }
+
+        /* ── Cols ─────────────────────────────────────────────── */
+        .col-name    { min-width:180px; max-width:280px; }
+        .col-image   { min-width:160px; max-width:260px; }
+        .col-status  { width:110px; white-space:nowrap; }
+        .col-ports   { min-width:120px; max-width:220px; color:#8899aa; font-size:0.75rem; font-family:monospace; }
+        .col-uptime  { width:100px; white-space:nowrap; color:#8899aa; font-size:0.78rem; }
+        .col-actions { width:90px; text-align:right; white-space:nowrap; }
+
+        .cell-name  { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .name-stack   { color:#7ec8e3; font-weight:700; }
+        .name-service { color:#e0e0e0; }
+        .name-suffix  { color:#46566a; font-size:0.72rem; }
+        .cell-image { font-family:monospace; font-size:0.75rem; color:#6eb5dd; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+        /* ── Badges ───────────────────────────────────────────── */
+        .badge-running    { display:inline-flex; align-items:center; gap:5px; background:#0f9b58; color:#fff; font-size:0.68rem; padding:3px 9px; border-radius:20px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; box-shadow:0 0 8px rgba(15,155,88,0.6); }
+        .badge-exited     { display:inline-flex; align-items:center; gap:5px; background:#2d3a52; color:#7a8fa6; font-size:0.68rem; padding:3px 9px; border-radius:20px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; }
+        .badge-restarting { display:inline-flex; align-items:center; gap:5px; background:#b07d00; color:#fff; font-size:0.68rem; padding:3px 9px; border-radius:20px; font-weight:800; text-transform:uppercase; }
+        .badge-paused     { display:inline-flex; align-items:center; gap:5px; background:#1a5276; color:#aed6f1; font-size:0.68rem; padding:3px 9px; border-radius:20px; font-weight:700; text-transform:uppercase; }
+        .badge-dead       { display:inline-flex; align-items:center; gap:5px; background:#641e16; color:#f1948a; font-size:0.68rem; padding:3px 9px; border-radius:20px; font-weight:700; text-transform:uppercase; }
+        .pulse-dot { width:6px; height:6px; background:#fff; border-radius:50%; animation:pulse-anim 1.2s ease-in-out infinite; flex-shrink:0; }
+        @keyframes pulse-anim { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.6)} }
+
+        /* ── Row loading bar ─────────────────────────────────── */
+        @keyframes c-load-slide { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        tr.c-row-loading td { position:relative; }
+        tr.c-row-loading td:last-child::after {
+            content:'';
+            position:absolute;
+            bottom:0; left:0; right:0; height:2px;
+            background:linear-gradient(90deg,transparent 0%,#4ab0dd 40%,#00c8ff 60%,transparent 100%);
+            background-size:200% 100%;
+            animation:c-load-slide 1.2s linear infinite;
+        }
+
+        /* ── Toast ───────────────────────────────────────────── */
+        #c-toast { position:fixed; bottom:24px; right:24px; z-index:9999; background:#1e2030; border:1px solid #3a4a6a; border-radius:10px; padding:10px 18px; font-size:0.82rem; color:#e0e0e0; display:none; box-shadow:0 4px 20px rgba(0,0,0,0.5); max-width:340px; }
+
+        /* ── Scrollable wrapper ──────────────────────────────── */
+        .table-wrapper { background:#14161e; border:1px solid #2d3a52; border-radius:8px; overflow:auto; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark mb-4">
+    <div class="container-fluid">
+        <div class="d-flex align-items-center gap-3">
+            <a href="/" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left"></i></a>
+            <span class="navbar-brand fw-bold mb-0"><i class="fas fa-cube"></i> Containers</span>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+            <span id="running-count" style="color:#c8d8e8; font-size:0.82rem;"></span>
+            <button id="btn-filter" class="btn btn-outline-secondary btn-sm" onclick="toggleFilter()">
+                <i class="fas fa-filter"></i> Solo attivi
+            </button>
+            <button class="btn btn-outline-light btn-sm" onclick="refreshList()">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
+    </div>
+</nav>
+
+<div class="container-fluid px-4">
+    <div class="table-wrapper">
+        <table class="c-table" id="c-table">
+            <colgroup>
+                <col style="width:26%"><!-- nome -->
+                <col style="width:22%"><!-- immagine -->
+                <col style="width:10%"><!-- stato -->
+                <col style="width:10%"><!-- attivo da -->
+                <col style="width:25%"><!-- porte -->
+                <col style="width:7%"> <!-- azioni -->
+            </colgroup>
+            <thead>
+                <tr>
+                    <th class="col-name">Nome</th>
+                    <th class="col-image">Immagine</th>
+                    <th class="col-status">Stato</th>
+                    <th class="col-uptime">Attivo da</th>
+                    <th class="col-ports">Porte</th>
+                    <th class="col-actions"></th>
+                </tr>
+            </thead>
+            <tbody id="c-tbody">
+                <tr th:each="c : ${containers}"
+                    th:id="'row-' + ${c.id}"
+                    th:classappend="${!c.running} ? 'c-row-stopped' : ''">
+                    <td class="col-name"><span class="cell-name" th:text="${c.name}" th:title="${c.name}" th:attr="data-project=${c.composeProject}"></span></td>
+                    <td class="col-image" th:title="${c.image}"><span class="cell-image" th:text="${c.image}"></span></td>
+                    <td class="col-status">
+                        <span th:switch="${c.state}">
+                            <span th:case="'running'"    class="badge-running"><span class="pulse-dot"></span> RUNNING</span>
+                            <span th:case="'exited'"     class="badge-exited">EXITED</span>
+                            <span th:case="'restarting'" class="badge-restarting">RESTARTING</span>
+                            <span th:case="'paused'"     class="badge-paused">PAUSED</span>
+                            <span th:case="'dead'"       class="badge-dead">DEAD</span>
+                            <span th:case="*"            class="badge-exited" th:text="${c.state}"></span>
+                        </span>
+                    </td>
+                    <td class="col-uptime" th:text="${c.runningFor}" th:title="${c.runningFor}"></td>
+                    <td class="col-ports"  th:text="${c.ports}"      th:title="${c.ports}"></td>
+                    <td class="col-actions">
+                        <button th:if="${c.stoppable}"
+                                class="btn btn-danger btn-sm"
+                                th:data-id="${c.id}" th:data-name="${c.name}"
+                                onclick="stopContainer(this.dataset.id, this.dataset.name)">
+                            <i class="fas fa-stop"></i>
+                        </button>
+                        <button th:if="${c.startable}"
+                                class="btn btn-success btn-sm"
+                                th:data-id="${c.id}" th:data-name="${c.name}"
+                                onclick="startContainer(this.dataset.id, this.dataset.name)">
+                            <i class="fas fa-play"></i>
+                        </button>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <p th:if="${#lists.isEmpty(containers)}" class="text-muted mt-4">
+        <i class="fas fa-info-circle"></i> Nessun container trovato. Assicurati che Docker sia in esecuzione.
+    </p>
+</div>
+
+<div id="c-toast"></div>
+
+<script>
+    let filterActive = false;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.cell-name').forEach(el => {
+            el.innerHTML = formatName(el.textContent.trim(), el.dataset.project || '');
+        });
+        updateRunningCount();
+    });
+
+    function updateRunningCount() {
+        const rows = document.querySelectorAll('#c-tbody tr');
+        const running = document.querySelectorAll('#c-tbody tr:not(.c-row-stopped)').length;
+        document.getElementById('running-count').textContent = running + ' attivi / ' + rows.length + ' totali';
+    }
+
+    function toggleFilter() {
+        filterActive = !filterActive;
+        const btn = document.getElementById('btn-filter');
+        btn.classList.toggle('btn-outline-secondary', !filterActive);
+        btn.classList.toggle('btn-info', filterActive);
+        document.querySelectorAll('#c-tbody .c-row-stopped').forEach(r => {
+            r.style.display = filterActive ? 'none' : '';
+        });
+    }
+
+    function setRowLoading(id, loading) {
+        const row = document.getElementById('row-' + id);
+        if (!row) return;
+        if (loading) row.classList.add('c-row-loading');
+        else row.classList.remove('c-row-loading');
+    }
+
+    async function stopContainer(id, name) {
+        setRowLoading(id, true);
+        showToast('<i class="fas fa-stop"></i> Stopping <b>' + name + '</b>...');
+        try {
+            const res = await fetch('/containers/' + id + '/stop', { method: 'POST' });
+            const data = await res.json();
+            if (!data.success) {
+                setRowLoading(id, false);
+                showToast('<i class="fas fa-exclamation-circle" style="color:#e74c3c"></i> Errore: ' + data.message, 4000);
+                return;
+            }
+            await pollState(id, s => s !== 'running', 15000);
+        } catch(e) {
+            setRowLoading(id, false);
+            showToast('<i class="fas fa-exclamation-circle" style="color:#e74c3c"></i> Errore di rete', 3000);
+            return;
+        }
+        await refreshList();
+    }
+
+    async function startContainer(id, name) {
+        setRowLoading(id, true);
+        showToast('<i class="fas fa-play"></i> Starting <b>' + name + '</b>...');
+        try {
+            const res = await fetch('/containers/' + id + '/start', { method: 'POST' });
+            const data = await res.json();
+            if (!data.success) {
+                setRowLoading(id, false);
+                showToast('<i class="fas fa-exclamation-circle" style="color:#e74c3c"></i> Errore: ' + data.message, 4000);
+                return;
+            }
+            await pollState(id, s => s === 'running', 20000);
+        } catch(e) {
+            setRowLoading(id, false);
+            showToast('<i class="fas fa-exclamation-circle" style="color:#e74c3c"></i> Errore di rete', 3000);
+            return;
+        }
+        await refreshList();
+    }
+
+    async function pollState(id, condition, maxWaitMs) {
+        const start = Date.now();
+        while (Date.now() - start < maxWaitMs) {
+            await sleep(1200);
+            try {
+                const res = await fetch('/containers/' + id + '/state');
+                const data = await res.json();
+                if (condition(data.state)) return;
+            } catch(_) {}
+        }
+    }
+
+    async function refreshList() {
+        try {
+            const res = await fetch('/containers/api');
+            const containers = await res.json();
+            const tbody = document.getElementById('c-tbody');
+            tbody.innerHTML = '';
+            containers.forEach(c => tbody.insertAdjacentHTML('beforeend', buildRow(c)));
+            updateRunningCount();
+            if (filterActive) {
+                document.querySelectorAll('#c-tbody .c-row-stopped').forEach(r => r.style.display = 'none');
+            }
+            hideToast();
+        } catch(e) { hideToast(); }
+    }
+
+    function buildRow(c) {
+        const stopped = c.state !== 'running' ? 'c-row-stopped' : '';
+        const badge = buildBadge(c.state);
+        const stopBtn  = c.stoppable ? `<button class="btn btn-danger btn-sm" data-id="${c.id}" data-name="${esc(c.name)}" onclick="stopContainer(this.dataset.id,this.dataset.name)"><i class="fas fa-stop"></i></button>` : '';
+        const startBtn = c.startable ? `<button class="btn btn-success btn-sm" data-id="${c.id}" data-name="${esc(c.name)}" onclick="startContainer(this.dataset.id,this.dataset.name)"><i class="fas fa-play"></i></button>` : '';
+        return `<tr id="row-${c.id}" class="${stopped}">
+            <td class="col-name" title="${esc(c.name)}"><span class="cell-name">${formatName(c.name, c.composeProject||'')}</span></td>
+            <td class="col-image" title="${esc(c.image)}"><span class="cell-image">${esc(c.image)}</span></td>
+            <td class="col-status">${badge}</td>
+            <td class="col-uptime" title="${esc(c.runningFor)}">${esc(c.runningFor)}</td>
+            <td class="col-ports"  title="${esc(c.ports)}">${esc(c.ports)}</td>
+            <td class="col-actions">${stopBtn}${startBtn}</td>
+        </tr>`;
+    }
+
+    function buildBadge(state) {
+        const map = {
+            running:    '<span class="badge-running"><span class="pulse-dot"></span> RUNNING</span>',
+            exited:     '<span class="badge-exited">EXITED</span>',
+            restarting: '<span class="badge-restarting">RESTARTING</span>',
+            paused:     '<span class="badge-paused">PAUSED</span>',
+            dead:       '<span class="badge-dead">DEAD</span>',
+        };
+        return map[state] || `<span class="badge-exited">${esc(state)}</span>`;
+    }
+
+    // Colora il nome del container:
+    //  Compose con label → project colorato, -service bianco, -N grigio
+    //  Swarm              → stack colorato, _service bianco, .N.id grigio
+    //  fallback           → tutto-tranne-N colorato, -N grigio
+    function formatName(name, project) {
+        // Compose: usa il label com.docker.compose.project
+        if (project && name.startsWith(project)) {
+            const rest = name.slice(project.length); // es. "-kafka-ui-1"
+            const numSuffix = rest.match(/(-\d+)$/);
+            if (numSuffix) {
+                const service = rest.slice(0, rest.length - numSuffix[1].length);
+                return `<span class="name-stack">${esc(project)}</span>`
+                     + `<span class="name-service">${esc(service)}</span>`
+                     + `<span class="name-suffix">${esc(numSuffix[1])}</span>`;
+            }
+            return `<span class="name-stack">${esc(project)}</span><span class="name-service">${esc(rest)}</span>`;
+        }
+        // Swarm: stack_service.N.taskid
+        const swarm = name.match(/^([^_]+)(_[^.]+)((?:\.\d+\.[a-z0-9]+)*)$/);
+        if (swarm) {
+            const suffix = swarm[3] ? `<span class="name-suffix">${esc(swarm[3])}</span>` : '';
+            return `<span class="name-stack">${esc(swarm[1])}</span><span class="name-service">${esc(swarm[2])}</span>${suffix}`;
+        }
+        // Fallback: name-N
+        const fallback = name.match(/^(.*?)(-\d+)$/);
+        if (fallback) {
+            return `<span class="name-stack">${esc(fallback[1])}</span><span class="name-suffix">${esc(fallback[2])}</span>`;
+        }
+        return esc(name);
+    }
+
+    function esc(s) {
+        return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    let _toastTimer = null;
+    function showToast(html, autoDismissMs) {
+        const t = document.getElementById('c-toast');
+        t.innerHTML = html;
+        t.style.display = 'block';
+        if (_toastTimer) clearTimeout(_toastTimer);
+        if (autoDismissMs) _toastTimer = setTimeout(hideToast, autoDismissMs);
+    }
+    function hideToast() {
+        document.getElementById('c-toast').style.display = 'none';
+        if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
+    }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
